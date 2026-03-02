@@ -71,8 +71,13 @@
 	};
 
 	type GlobeFocusTarget = {
+	mode: 'point' | 'bounds';
+	latitude?: number;
+	longitude?: number;
+	coordinates?: Array<{
 		latitude: number;
 		longitude: number;
+	}>;
 	};
 
 	type NewsCard = {
@@ -413,25 +418,31 @@
 		return city.city_id || `${coords.lat.toFixed(4)}:${coords.lon.toFixed(4)}`;
 	};
 
-	const primaryCoordsForNews = (item: NewsCard): GlobeFocusTarget | null => {
-		if (item.cities.length === 0) {
-			return null;
-		}
+const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
+	const coords = item.cities
+		.map((city) => {
+			const numeric = getNumericCoords(city);
+			return numeric ? { latitude: numeric.lat, longitude: numeric.lon } : null;
+		})
+		.filter((entry): entry is { latitude: number; longitude: number } => entry !== null);
 
-		const firstCoords = getNumericCoords(item.cities[0]);
-		if (firstCoords) {
-			return { latitude: firstCoords.lat, longitude: firstCoords.lon };
-		}
-
-		for (const city of item.cities) {
-			const coords = getNumericCoords(city);
-			if (coords) {
-				return { latitude: coords.lat, longitude: coords.lon };
-			}
-		}
-
+	if (coords.length === 0) {
 		return null;
+	}
+
+	if (coords.length === 1) {
+		return {
+			mode: 'point',
+			latitude: coords[0].latitude,
+			longitude: coords[0].longitude
+		};
+	}
+
+	return {
+		mode: 'bounds',
+		coordinates: coords
 	};
+};
 
 	const buildMapMarkers = (items: NewsCard[]): MapMarker[] => {
 		const grouped = new Map<
@@ -536,6 +547,21 @@
 	};
 
 	const mapMarkers = $derived.by(() => buildMapMarkers(feed));
+	const markerThemeLegend = $derived.by(() => {
+		const legendMap = new Map<string, string>();
+		for (const marker of mapMarkers) {
+			const dominantTheme = marker.segments[0];
+			if (!dominantTheme) {
+				continue;
+			}
+			if (!legendMap.has(dominantTheme.label)) {
+				legendMap.set(dominantTheme.label, dominantTheme.color);
+			}
+		}
+		return [...legendMap.entries()]
+			.map(([label, color]) => ({ label, color }))
+			.sort((a, b) => a.label.localeCompare(b.label));
+	});
 
 	const filteredFeed = $derived.by(() => {
 		if (!selectedMarkerId) {
@@ -686,7 +712,7 @@
 
 		selectedNewsId = newsId;
 		const selectedItem = feed.find((item) => item.id === newsId);
-		newsFocusTarget = selectedItem ? primaryCoordsForNews(selectedItem) : null;
+		newsFocusTarget = selectedItem ? focusTargetForNews(selectedItem) : null;
 	};
 
 	const gotoPrevFeedPage = () => {
@@ -811,6 +837,19 @@
 			{/if}
 		</div>
 	</div>
+	{#if markerThemeLegend.length > 0}
+		<section class="map-legend" aria-label="Map marker legend">
+			<p class="map-legend-title">Color legend</p>
+			<div class="map-legend-list">
+				{#each markerThemeLegend as item}
+					<div class="map-legend-item">
+						<span class="map-legend-color" style={`background-color:${item.color}`} aria-hidden="true"></span>
+						<span class="map-legend-label">{item.label}</span>
+					</div>
+				{/each}
+			</div>
+		</section>
+	{/if}
 </section>
 
 <style>
@@ -829,6 +868,57 @@
 		gap: 0.9rem;
 		pointer-events: none;
 		z-index: 500;
+	}
+
+	.map-legend {
+		position: absolute;
+		left: 1rem;
+		bottom: 1rem;
+		z-index: 520;
+		padding: 0.52rem 0.62rem;
+		border-radius: 0.56rem;
+		border: 1px solid #2f4254;
+		background: linear-gradient(160deg, #0b121bcf, #132130b8);
+		backdrop-filter: blur(10px);
+		box-shadow: 0 10px 26px #01060d88;
+		pointer-events: none;
+		max-width: min(21rem, 42vw);
+	}
+
+	.map-legend-title {
+		margin: 0 0 0.34rem;
+		font: 600 0.68rem/1 'IBM Plex Mono', monospace;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: #dce7f4;
+	}
+
+	.map-legend-list {
+		display: grid;
+		gap: 0.26rem;
+	}
+
+	.map-legend-item {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		min-width: 0;
+	}
+
+	.map-legend-color {
+		width: 0.64rem;
+		height: 0.64rem;
+		border-radius: 999px;
+		flex: 0 0 auto;
+		border: 1px solid #ffffff3d;
+	}
+
+	.map-legend-label {
+		font: 500 0.72rem/1.2 'IBM Plex Sans', sans-serif;
+		color: #cfddea;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.sidebar-stack {
@@ -1092,6 +1182,12 @@
 		.overlay-grid {
 			padding: 0.75rem;
 			gap: 0.65rem;
+		}
+
+		.map-legend {
+			left: 0.75rem;
+			bottom: 0.75rem;
+			max-width: min(16rem, 60vw);
 		}
 
 		.title-overlay {

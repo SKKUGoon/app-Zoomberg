@@ -46,8 +46,13 @@
 	};
 
 	type FocusTarget = {
+	mode: 'point' | 'bounds';
+	latitude?: number;
+	longitude?: number;
+	coordinates?: Array<{
 		latitude: number;
 		longitude: number;
+	}>;
 	};
 
 	type CesiumModule = typeof import('cesium');
@@ -207,14 +212,42 @@
 			return;
 		}
 
+	if (focusTarget.mode === 'bounds') {
+		const points = focusTarget.coordinates ?? [];
+		if (points.length === 0) {
+			return;
+		}
+
+		const latitudes = points.map((point) => point.latitude);
+		const longitudes = points.map((point) => point.longitude);
+		const south = Math.max(-85, Math.min(...latitudes) - 10);
+		const north = Math.min(85, Math.max(...latitudes) + 10);
+		const west = Math.max(-179, Math.min(...longitudes) - 14);
+		const east = Math.min(179, Math.max(...longitudes) + 14);
+
+		viewer.camera.flyTo({
+			destination: cesium.Rectangle.fromDegrees(west, south, east, north),
+			duration: 1.2
+		});
+		return;
+	}
+
+	if (
+		focusTarget.mode !== 'point' ||
+		typeof focusTarget.latitude !== 'number' ||
+		typeof focusTarget.longitude !== 'number'
+	) {
+		return;
+	}
+
 		const targetHeight = ZOOM_HEIGHT_SCALE / 2 ** MAX_ZOOM;
 		const offsetMeters = Math.max(
 			SIDEBAR_COMPENSATION_MIN_METERS,
 			Math.min(SIDEBAR_COMPENSATION_MAX_METERS, targetHeight * SIDEBAR_COMPENSATION_FACTOR)
 		);
-		const offsetLongitude = focusTarget.longitude + longitudeOffsetFromMeters(offsetMeters, focusTarget.latitude);
+	const offsetLongitude = focusTarget.longitude + longitudeOffsetFromMeters(offsetMeters, focusTarget.latitude);
 		viewer.camera.flyTo({
-			destination: cesium.Cartesian3.fromDegrees(offsetLongitude, focusTarget.latitude, targetHeight),
+		destination: cesium.Cartesian3.fromDegrees(offsetLongitude, focusTarget.latitude, targetHeight),
 			duration: 1.05
 		});
 	};
