@@ -266,6 +266,22 @@
 		const normalized = themeLabel.toLowerCase();
 		return normalized.startsWith('policy') || normalized.includes('policy(');
 	};
+	const isBondTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.includes('asset(bond)') || (normalized.includes('asset') && normalized.includes('bond'));
+	};
+	const isCommodityTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.includes('asset(commodity)') || (normalized.includes('asset') && normalized.includes('commodity'));
+	};
+	const isEventsTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.startsWith('events') || normalized.includes('events(') || normalized.includes('event(');
+	};
+	const isGoldTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.includes('asset(gold)') || (normalized.includes('asset') && normalized.includes('gold'));
+	};
 	const CURRENCY_GREEN = '#38b26d';
 	const DEVELOPED_STOCKS_BLUE = '#4d96ff';
 	const EMERGING_STOCKS_ORANGE = '#f29f38';
@@ -600,7 +616,11 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 				isDevelopedStocks: isDevelopedStocksTheme(label),
 				isEmergingStocks: isEmergingStocksTheme(label),
 				isRealEstate: isRealEstateTheme(label),
-				isPolicy: isPolicyTheme(label)
+				isPolicy: isPolicyTheme(label),
+				isBond: isBondTheme(label),
+				isCommodity: isCommodityTheme(label),
+				isEvents: isEventsTheme(label),
+				isGold: isGoldTheme(label)
 			}))
 			.sort((a, b) => a.label.localeCompare(b.label));
 	});
@@ -712,6 +732,24 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		const start = (feedPage - 1) * FEED_PAGE_SIZE;
 		return filteredFeed.slice(start, start + FEED_PAGE_SIZE);
 	});
+	const topBannerItems = $derived.by(() => {
+		if (feed.length === 0) {
+			return ['Waiting for live market news feed...'];
+		}
+		return feed.slice(0, 12).map((item) => {
+			const location = formatLocationsForCard(item.cities);
+			return `${formatTime(item.time_published)} - ${item.source}: ${item.source_title} (${location})`;
+		});
+	});
+	const bottomBannerItems = $derived.by(() => {
+		if (mapMarkers.length === 0) {
+			return ['No geolocated markers available for the current time window.'];
+		}
+		return mapMarkers.slice(0, 12).map((marker) => {
+			const dominantTheme = marker.segments[0]?.label ?? 'Unknown theme';
+			return `${marker.title} - ${marker.total} article(s) - ${dominantTheme}`;
+		});
+	});
 
 	$effect(() => {
 		const maxPage = totalFeedPages;
@@ -780,6 +818,20 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		onMarkerOpen={onMarkerOpen}
 		onMarkerClose={onMarkerClose}
 	/>
+	<div class="globe-banner globe-banner-top" aria-label="Live news ticker">
+		<div class="globe-banner-track">
+			{#each [...topBannerItems, ...topBannerItems] as item, index (`top-${index}-${item}`)}
+				<span class="globe-banner-item">{item}</span>
+			{/each}
+		</div>
+	</div>
+	<div class="globe-banner globe-banner-bottom" aria-label="Area summary ticker">
+		<div class="globe-banner-track">
+			{#each [...bottomBannerItems, ...bottomBannerItems] as item, index (`bottom-${index}-${item}`)}
+				<span class="globe-banner-item">{item}</span>
+			{/each}
+		</div>
+	</div>
 
 	<div class="overlay-grid">
 		<div class="sidebar-stack">
@@ -945,6 +997,54 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 									d="M160-120v-80h480v80H160Zm226-194L160-540l84-86 228 226-86 86Zm254-254L414-796l86-84 226 226-86 86Zm184 408L302-682l56-56 522 522-56 56Z"
 								/>
 							</svg>
+						{:else if item.isBond}
+							<svg
+								class="map-legend-bond-icon"
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 -960 960 960"
+								aria-hidden="true"
+							>
+								<path
+									fill={item.color}
+									d="M336-120q-91 0-153.5-62.5T120-336q0-38 13-74t37-65l142-171-97-194h530l-97 194 142 171q24 29 37 65t13 74q0 91-63 153.5T624-120H336Zm144-200q-33 0-56.5-23.5T400-400q0-33 23.5-56.5T480-480q33 0 56.5 23.5T560-400q0 33-23.5 56.5T480-320Zm-95-360h190l40-80H345l40 80Zm-49 480h288q57 0 96.5-39.5T760-336q0-24-8.5-46.5T728-423L581-600H380L232-424q-15 18-23.5 41t-8.5 47q0 57 39.5 96.5T336-200Z"
+								/>
+							</svg>
+						{:else if item.isCommodity}
+							<svg
+								class="map-legend-commodity-icon"
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 -960 960 960"
+								aria-hidden="true"
+							>
+								<path
+									fill={item.color}
+									d="M480-120 80-600l120-240h560l120 240-400 480Zm-95-520h190l-60-120h-70l-60 120Zm55 347v-267H218l222 267Zm80 0 222-267H520v267Zm144-347h106l-60-120H604l60 120Zm-474 0h106l60-120H250l-60 120Z"
+								/>
+							</svg>
+						{:else if item.isEvents}
+							<svg
+								class="map-legend-events-icon"
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 -960 960 960"
+								aria-hidden="true"
+							>
+								<path
+									fill={item.color}
+									d="m480-281 59-59h81v-81l59-59-59-59v-81h-81l-59-59-59 59h-81v81l-59 59 59 59v81h81l59 59Zm0 253L346-160H160v-186L28-480l132-134v-186h186l134-132 134 132h186v186l132 134-132 134v186H614L480-28Zm0-112 100-100h140v-140l100-100-100-100v-140H580L480-820 380-720H240v140L140-480l100 100v140h140l100 100Zm0-340Z"
+								/>
+							</svg>
+						{:else if item.isGold}
+							<svg
+								class="map-legend-gold-icon"
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 -960 960 960"
+								aria-hidden="true"
+							>
+								<path
+									fill={item.color}
+									d="M852-212 732-332l56-56 120 120-56 56ZM708-692l-56-56 120-120 56 56-120 120Zm-456 0L132-812l56-56 120 120-56 56ZM108-212l-56-56 120-120 56 56-120 120Zm246-75 126-76 126 77-33-144 111-96-146-13-58-136-58 135-146 13 111 97-33 143ZM233-120l65-281L80-590l288-25 112-265 112 265 288 25-218 189 65 281-247-149-247 149Zm247-361Z"
+								/>
+							</svg>
 						{:else}
 							<span class="map-legend-color" style={`background-color:${item.color}`} aria-hidden="true"></span>
 						{/if}
@@ -961,6 +1061,9 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		position: relative;
 		height: 100vh;
 		width: 100%;
+		--globe-banner-offset: 0.75rem;
+		--globe-banner-safe-top: 2.25rem;
+		--globe-banner-safe-bottom: 5.5rem;
 	}
 
 	.overlay-grid {
@@ -968,16 +1071,19 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		inset: 0;
 		display: flex;
 		justify-content: flex-end;
-		padding: 1rem;
+		align-items: stretch;
+		padding: calc(var(--globe-banner-offset) + var(--globe-banner-safe-top)) 1rem
+			calc(var(--globe-banner-offset) + var(--globe-banner-safe-bottom));
 		gap: 0.9rem;
 		pointer-events: none;
 		z-index: 500;
+		box-sizing: border-box;
 	}
 
 	.map-legend {
 		position: absolute;
 		left: 1rem;
-		bottom: 1rem;
+		bottom: calc(var(--globe-banner-offset) + var(--globe-banner-safe-bottom));
 		z-index: 520;
 		padding: 0.52rem 0.62rem;
 		border-radius: 0.56rem;
@@ -1047,6 +1153,15 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		flex: 0 0 auto;
 	}
 
+	.map-legend-bond-icon,
+	.map-legend-commodity-icon,
+	.map-legend-events-icon,
+	.map-legend-gold-icon {
+		width: 0.9rem;
+		height: 0.9rem;
+		flex: 0 0 auto;
+	}
+
 	.map-legend-label {
 		font: 500 0.72rem/1.2 'IBM Plex Sans', sans-serif;
 		color: #cfddea;
@@ -1061,7 +1176,70 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		flex-direction: column;
 		gap: 0.9rem;
 		width: min(38rem, 47vw);
-		max-height: calc(100vh - 2rem);
+		min-height: 0;
+		max-height: calc(100vh - (var(--globe-banner-offset) + var(--globe-banner-safe-top)) - (var(--globe-banner-offset) + var(--globe-banner-safe-bottom)));
+	}
+
+	.globe-banner {
+		position: absolute;
+		left: 1rem;
+		right: 1rem;
+		z-index: 515;
+		overflow: hidden;
+		border: 1px solid #2f4254;
+		border-radius: 0.56rem;
+		background: linear-gradient(160deg, #0b121bcf, #132130b8);
+		backdrop-filter: blur(10px);
+		box-shadow: 0 10px 26px #01060d88;
+		pointer-events: auto;
+	}
+
+	.globe-banner-top {
+		top: var(--globe-banner-offset);
+	}
+
+	.globe-banner-bottom {
+		bottom: var(--globe-banner-offset);
+	}
+
+	.globe-banner-track {
+		display: inline-flex;
+		align-items: center;
+		gap: 0;
+		white-space: nowrap;
+		width: max-content;
+		min-width: 100%;
+		animation: globe-banner-scroll 90s linear infinite;
+		will-change: transform;
+	}
+
+	.globe-banner:hover .globe-banner-track {
+		animation-play-state: paused;
+	}
+
+	.globe-banner-item {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		padding: 0.45rem 1.05rem;
+		font: 500 0.72rem/1 'IBM Plex Sans', sans-serif;
+		color: #dce7f4;
+	}
+
+	.globe-banner-item::after {
+		content: '•';
+		position: absolute;
+		right: 0;
+		color: #8ea2b7;
+	}
+
+	@keyframes globe-banner-scroll {
+		from {
+			transform: translateX(0);
+		}
+		to {
+			transform: translateX(-50%);
+		}
 	}
 
 	.title-overlay,
@@ -1314,14 +1492,25 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 
 	@media (max-width: 680px) {
 		.overlay-grid {
-			padding: 0.75rem;
+			padding: calc(var(--globe-banner-offset) + var(--globe-banner-safe-top)) 0.75rem
+				calc(var(--globe-banner-offset) + var(--globe-banner-safe-bottom));
 			gap: 0.65rem;
 		}
 
 		.map-legend {
 			left: 0.75rem;
-			bottom: 0.75rem;
+			bottom: calc(var(--globe-banner-offset) + var(--globe-banner-safe-bottom));
 			max-width: min(16rem, 60vw);
+		}
+
+		.globe-banner {
+			left: 0.75rem;
+			right: 0.75rem;
+		}
+
+		.globe-banner-item {
+			font-size: 0.69rem;
+			padding: 0.42rem 0.86rem;
 		}
 
 		.title-overlay {

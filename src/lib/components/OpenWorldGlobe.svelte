@@ -11,6 +11,7 @@
 
 	type MapMarker = {
 		id: string;
+	cityId?: string;
 		latitude: number;
 		longitude: number;
 		title: string;
@@ -104,6 +105,16 @@
 	const DEVELOPED_STOCKS_BLUE_SELECTED = '#8bbcff';
 	const EMERGING_STOCKS_ORANGE = '#f29f38';
 	const EMERGING_STOCKS_ORANGE_SELECTED = '#ffc06f';
+	const relationGlowColorForMarker = (marker: MapMarker): string | null => {
+		if (!newsRelationshipOverlay || !marker.cityId) {
+			return null;
+		}
+		const highlight = newsRelationshipOverlay.highlights.find(
+			(entry: NewsRelationshipOverlay['highlights'][number]) => entry.cityId === marker.cityId
+		);
+		return highlight?.color ?? null;
+	};
+
 	const isOilAssetTheme = (themeLabel: string) => {
 		const normalized = themeLabel.toLowerCase();
 		return normalized.includes('asset(oil)') || (normalized.includes('asset') && normalized.includes('oil'));
@@ -128,24 +139,92 @@
 		const normalized = themeLabel.toLowerCase();
 		return normalized.startsWith('policy') || normalized.includes('policy(');
 	};
-	const oilBarrelIconDataUrl = (fillColor: string) => {
-		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44" fill="${fillColor}"><path d="M160-120q-17 0-28.5-11.5T120-160q0-17 11.5-28.5T160-200h40v-240h-40q-17 0-28.5-11.5T120-480q0-17 11.5-28.5T160-520h40v-240h-40q-17 0-28.5-11.5T120-800q0-17 11.5-28.5T160-840h640q17 0 28.5 11.5T840-800q0 17-11.5 28.5T800-760h-40v240h40q17 0 28.5 11.5T840-480q0 17-11.5 28.5T800-440h-40v240h40q17 0 28.5 11.5T840-160q0 17-11.5 28.5T800-120H160Zm120-80h400v-240q-17 0-28.5-11.5T640-480q0-17 11.5-28.5T680-520v-240H280v240q17 0 28.5 11.5T320-480q0 17-11.5 28.5T280-440v240Zm285-154.5q35-34.5 35-83.5 0-39-22.5-67T480-620q-75 86-97.5 114.5T360-438q0 49 35 83.5t85 34.5q50 0 85-34.5ZM280-200v-560 560Z"/></svg>`;
+	const isBondTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.includes('asset(bond)') || (normalized.includes('asset') && normalized.includes('bond'));
+	};
+	const isCommodityTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.includes('asset(commodity)') || (normalized.includes('asset') && normalized.includes('commodity'));
+	};
+	const isEventsTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.startsWith('events') || normalized.includes('events(') || normalized.includes('event(');
+	};
+	const isGoldTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.includes('asset(gold)') || (normalized.includes('asset') && normalized.includes('gold'));
+	};
+	const oilBarrelIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
+		const glowBackdrop = glowColor
+			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
+			: '';
+		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
+		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="M160-120q-17 0-28.5-11.5T120-160q0-17 11.5-28.5T160-200h40v-240h-40q-17 0-28.5-11.5T120-480q0-17 11.5-28.5T160-520h40v-240h-40q-17 0-28.5-11.5T120-800q0-17 11.5-28.5T160-840h640q17 0 28.5 11.5T840-800q0 17-11.5 28.5T800-760h-40v240h40q17 0 28.5 11.5T840-480q0 17-11.5 28.5T800-440h-40v240h40q17 0 28.5 11.5T840-160q0 17-11.5 28.5T800-120H160Zm120-80h400v-240q-17 0-28.5-11.5T640-480q0-17 11.5-28.5T680-520v-240H280v240q17 0 28.5 11.5T320-480q0 17-11.5 28.5T280-440v240Zm285-154.5q35-34.5 35-83.5 0-39-22.5-67T480-620q-75 86-97.5 114.5T360-438q0 49 35 83.5t85 34.5q50 0 85-34.5ZM280-200v-560 560Z"/></svg>`;
 		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 	};
-	const currencyIconDataUrl = (fillColor: string) => {
-		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44" fill="${fillColor}"><path d="M600-320h160v-160h-60v100H600v60Zm-120-40q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM200-480h60v-100h100v-60H200v160ZM80-200v-560h800v560H80Zm80-80h640v-400H160v400Zm0 0v-400 400Z"/></svg>`;
+	const currencyIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
+		const glowBackdrop = glowColor
+			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
+			: '';
+		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
+		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="M600-320h160v-160h-60v100H600v60Zm-120-40q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM200-480h60v-100h100v-60H200v160ZM80-200v-560h800v560H80Zm80-80h640v-400H160v400Zm0 0v-400 400Z"/></svg>`;
 		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 	};
-	const stocksIconDataUrl = (fillColor: string) => {
-		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44" fill="${fillColor}"><path d="M200-280v-280h80v280h-80Zm240 0v-280h80v280h-80ZM80-120v-80h800v80H80Zm600-160v-280h80v280h-80ZM80-640v-80l400-200 400 200v80H80Zm178-80h444-444Zm0 0h444L480-830 258-720Z"/></svg>`;
+	const stocksIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
+		const glowBackdrop = glowColor
+			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
+			: '';
+		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
+		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="M200-280v-280h80v280h-80Zm240 0v-280h80v280h-80ZM80-120v-80h800v80H80Zm600-160v-280h80v280h-80ZM80-640v-80l400-200 400 200v80H80Zm178-80h444-444Zm0 0h444L480-830 258-720Z"/></svg>`;
 		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 	};
-	const realEstateIconDataUrl = (fillColor: string) => {
-		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44" fill="${fillColor}"><path d="M120-120v-560h160v-160h400v320h160v400H520v-160h-80v160H120Zm80-80h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 320h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 480h80v-80h-80v80Zm0-160h80v-80h-80v80Z"/></svg>`;
+	const realEstateIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
+		const glowBackdrop = glowColor
+			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
+			: '';
+		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
+		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="M120-120v-560h160v-160h400v320h160v400H520v-160h-80v160H120Zm80-80h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 320h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 480h80v-80h-80v80Zm0-160h80v-80h-80v80Z"/></svg>`;
 		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 	};
-	const policyIconDataUrl = (fillColor: string) => {
-		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44" fill="${fillColor}"><path d="M160-120v-80h480v80H160Zm226-194L160-540l84-86 228 226-86 86Zm254-254L414-796l86-84 226 226-86 86Zm184 408L302-682l56-56 522 522-56 56Z"/></svg>`;
+	const policyIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
+		const glowBackdrop = glowColor
+			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
+			: '';
+		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
+		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="M160-120v-80h480v80H160Zm226-194L160-540l84-86 228 226-86 86Zm254-254L414-796l86-84 226 226-86 86Zm184 408L302-682l56-56 522 522-56 56Z"/></svg>`;
+		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+	};
+	const bondIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
+		const glowBackdrop = glowColor
+			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
+			: '';
+		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
+		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="M336-120q-91 0-153.5-62.5T120-336q0-38 13-74t37-65l142-171-97-194h530l-97 194 142 171q24 29 37 65t13 74q0 91-63 153.5T624-120H336Zm144-200q-33 0-56.5-23.5T400-400q0-33 23.5-56.5T480-480q33 0 56.5 23.5T560-400q0 33-23.5 56.5T480-320Zm-95-360h190l40-80H345l40 80Zm-49 480h288q57 0 96.5-39.5T760-336q0-24-8.5-46.5T728-423L581-600H380L232-424q-15 18-23.5 41t-8.5 47q0 57 39.5 96.5T336-200Z"/></svg>`;
+		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+	};
+	const commodityIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
+		const glowBackdrop = glowColor
+			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
+			: '';
+		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
+		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="M480-120 80-600l120-240h560l120 240-400 480Zm-95-520h190l-60-120h-70l-60 120Zm55 347v-267H218l222 267Zm80 0 222-267H520v267Zm144-347h106l-60-120H604l60 120Zm-474 0h106l60-120H250l-60 120Z"/></svg>`;
+		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+	};
+	const eventsIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
+		const glowBackdrop = glowColor
+			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
+			: '';
+		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
+		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="m480-281 59-59h81v-81l59-59-59-59v-81h-81l-59-59-59 59h-81v81l-59 59 59 59v81h81l59 59Zm0 253L346-160H160v-186L28-480l132-134v-186h186l134-132 134 132h186v186l132 134-132 134v186H614L480-28Zm0-112 100-100h140v-140l100-100-100-100v-140H580L480-820 380-720H240v140L140-480l100 100v140h140l100 100Zm0-340Z"/></svg>`;
+		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+	};
+	const goldIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
+		const glowBackdrop = glowColor
+			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
+			: '';
+		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
+		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="M852-212 732-332l56-56 120 120-56 56ZM708-692l-56-56 120-120 56 56-120 120Zm-456 0L132-812l56-56 120 120-56 56ZM108-212l-56-56 120-120 56 56-120 120Zm246-75 126-76 126 77-33-144 111-96-146-13-58-136-58 135-146 13 111 97-33 143ZM233-120l65-281L80-590l288-25 112-265 112 265 288 25-218 189 65 281-247-149-247 149Zm247-361Z"/></svg>`;
 		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 	};
 
@@ -390,6 +469,10 @@
 			const useEmergingStocksIcon = isEmergingStocksTheme(dominantTheme);
 			const useRealEstateIcon = isRealEstateTheme(dominantTheme);
 			const usePolicyIcon = isPolicyTheme(dominantTheme);
+			const useBondIcon = isBondTheme(dominantTheme);
+			const useCommodityIcon = isCommodityTheme(dominantTheme);
+			const useEventsIcon = isEventsTheme(dominantTheme);
+			const useGoldIcon = isGoldTheme(dominantTheme);
 			const useStocksIcon = useDevelopedStocksIcon || useEmergingStocksIcon;
 			const baseColor = toColor(colorHex, '#f2a93b') ?? cesium.Color.ORANGE;
 			const activeColor = cesium.Color.fromCssColorString('#f7bf66');
@@ -408,11 +491,21 @@
 				: marker.id === selectedMarkerId
 					? '#f7bf66'
 					: colorHex;
+			const glowColor = relationGlowColorForMarker(marker);
 			const iconSize = Math.round(markerSize(marker.total) + 12);
 
 			const entity = viewer.entities.add({
 				position: cesium.Cartesian3.fromDegrees(marker.longitude, marker.latitude),
-				point: useOilIcon || useCurrencyIcon || useStocksIcon || useRealEstateIcon || usePolicyIcon
+				point:
+					useOilIcon ||
+					useCurrencyIcon ||
+					useStocksIcon ||
+					useRealEstateIcon ||
+					usePolicyIcon ||
+					useBondIcon ||
+					useCommodityIcon ||
+					useEventsIcon ||
+					useGoldIcon
 					? undefined
 					: {
 							pixelSize: markerSize(marker.total),
@@ -420,20 +513,36 @@
 							outlineColor: cesium.Color.fromCssColorString('#0a0e13'),
 							outlineWidth: marker.id === selectedMarkerId ? 2.4 : 1.4
 						},
-				billboard: useOilIcon || useCurrencyIcon || useStocksIcon || useRealEstateIcon || usePolicyIcon
+				billboard:
+					useOilIcon ||
+					useCurrencyIcon ||
+					useStocksIcon ||
+					useRealEstateIcon ||
+					usePolicyIcon ||
+					useBondIcon ||
+					useCommodityIcon ||
+					useEventsIcon ||
+					useGoldIcon
 					? {
 							image: useOilIcon
-								? oilBarrelIconDataUrl(markerColorHex)
+								? oilBarrelIconDataUrl(markerColorHex, glowColor)
 								: useCurrencyIcon
-									? currencyIconDataUrl(markerColorHex)
+									? currencyIconDataUrl(markerColorHex, glowColor)
 									: useStocksIcon
-										? stocksIconDataUrl(markerColorHex)
+										? stocksIconDataUrl(markerColorHex, glowColor)
 										: useRealEstateIcon
-											? realEstateIconDataUrl(markerColorHex)
-											: policyIconDataUrl(markerColorHex),
+											? realEstateIconDataUrl(markerColorHex, glowColor)
+											: usePolicyIcon
+												? policyIconDataUrl(markerColorHex, glowColor)
+												: useBondIcon
+													? bondIconDataUrl(markerColorHex, glowColor)
+													: useCommodityIcon
+														? commodityIconDataUrl(markerColorHex, glowColor)
+														: useEventsIcon
+															? eventsIconDataUrl(markerColorHex, glowColor)
+															: goldIconDataUrl(markerColorHex, glowColor),
 							width: iconSize,
 							height: iconSize,
-							disableDepthTestDistance: Number.POSITIVE_INFINITY,
 							verticalOrigin: cesium.VerticalOrigin.CENTER
 						}
 					: undefined,
@@ -466,9 +575,25 @@
 			const useEmergingStocksIcon = isEmergingStocksTheme(dominantTheme);
 			const useRealEstateIcon = isRealEstateTheme(dominantTheme);
 			const usePolicyIcon = isPolicyTheme(dominantTheme);
+			const useBondIcon = isBondTheme(dominantTheme);
+			const useCommodityIcon = isCommodityTheme(dominantTheme);
+			const useEventsIcon = isEventsTheme(dominantTheme);
+			const useGoldIcon = isGoldTheme(dominantTheme);
 			const useStocksIcon = useDevelopedStocksIcon || useEmergingStocksIcon;
+			const glowColor = relationGlowColorForMarker(marker);
 
-			if ((useOilIcon || useCurrencyIcon || useStocksIcon || useRealEstateIcon || usePolicyIcon) && entity.billboard) {
+			if (
+				(useOilIcon ||
+					useCurrencyIcon ||
+					useStocksIcon ||
+					useRealEstateIcon ||
+					usePolicyIcon ||
+					useBondIcon ||
+					useCommodityIcon ||
+					useEventsIcon ||
+					useGoldIcon) &&
+				entity.billboard
+			) {
 				const markerColorHex = useCurrencyIcon
 					? isActive
 						? CURRENCY_GREEN_SELECTED
@@ -486,14 +611,22 @@
 						: marker.segments[0]?.color ?? '#f2a93b';
 				entity.billboard.image = new cesium.ConstantProperty(
 					useOilIcon
-						? oilBarrelIconDataUrl(markerColorHex)
+						? oilBarrelIconDataUrl(markerColorHex, glowColor)
 						: useCurrencyIcon
-							? currencyIconDataUrl(markerColorHex)
+							? currencyIconDataUrl(markerColorHex, glowColor)
 							: useStocksIcon
-								? stocksIconDataUrl(markerColorHex)
+								? stocksIconDataUrl(markerColorHex, glowColor)
 								: useRealEstateIcon
-									? realEstateIconDataUrl(markerColorHex)
-									: policyIconDataUrl(markerColorHex)
+									? realEstateIconDataUrl(markerColorHex, glowColor)
+									: usePolicyIcon
+										? policyIconDataUrl(markerColorHex, glowColor)
+										: useBondIcon
+											? bondIconDataUrl(markerColorHex, glowColor)
+											: useCommodityIcon
+												? commodityIconDataUrl(markerColorHex, glowColor)
+												: useEventsIcon
+													? eventsIconDataUrl(markerColorHex, glowColor)
+													: goldIconDataUrl(markerColorHex, glowColor)
 				);
 				continue;
 			}
@@ -507,7 +640,10 @@
 					? cesium.Color.fromCssColorString('#f7bf66')
 					: toColor(marker.segments[0]?.color ?? '#f2a93b', '#f2a93b') ?? cesium.Color.ORANGE
 			);
-			entity.point.outlineWidth = new cesium.ConstantProperty(isActive ? 2.4 : 1.4);
+			entity.point.outlineColor = new cesium.ConstantProperty(
+				toColor(glowColor ?? '#0a0e13', '#0a0e13') ?? cesium.Color.fromCssColorString('#0a0e13')
+			);
+			entity.point.outlineWidth = new cesium.ConstantProperty(glowColor ? 4 : isActive ? 2.4 : 1.4);
 		}
 
 		if (!selectedMarkerId) {
@@ -534,6 +670,7 @@
 	$effect(() => {
 		void newsRelationshipOverlay;
 		renderRelationshipOverlay();
+		syncSelection();
 	});
 
 	$effect(() => {
