@@ -5,11 +5,12 @@
 	const pollOptions = ['1 minute (default)', '5 minutes', '10 minutes'];
 	const newsFields = [
 		'source, source_title, source_link',
-		'summary, time_published, city_id',
-		'city_id -> mart.dim__city.city_id',
-		'dim__city latitude/longitude for map markers',
+		'summary, time_published, rss_item_id',
+		'map__news_cities.news_id -> fact__distilled_news.id',
+		'map__news_relationship from_city_id / to_city_id',
+		'dim__city latitude/longitude for map markers and links',
 		'keyword_theme_upper/lower',
-		'keyword_action_upper/lower'
+		'relation_type: Assault, Cooperate, Independent'
 	];
 </script>
 
@@ -44,12 +45,12 @@
 	<PanelCard title="Data Access Layer" className="settings-panel" tag="Drizzle ORM">
 		<ul>
 			<li>Read-only query path (no migrations)</li>
-			<li>Tables: mart.fact__news + mart.dim__city</li>
-			<li>Join key: city_id</li>
+			<li>Tables: mart.fact__distilled_news + mart.map__news_cities + mart.map__news_relationship + mart.dim__city</li>
+			<li>Join keys: news_id, city_id, from_city_id, to_city_id</li>
 		</ul>
 	</PanelCard>
 
-	<PanelCard title="News Data Fields" className="settings-panel" tag="mart.fact__news">
+	<PanelCard title="News Data Fields" className="settings-panel" tag="mart.fact__distilled_news">
 		<ul>
 			{#each newsFields as field}
 				<li>{field}</li>

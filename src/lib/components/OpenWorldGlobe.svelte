@@ -27,16 +27,43 @@
 		}>;
 	};
 
+	type NewsRelationshipOverlay = {
+		highlights: Array<{
+			cityId: string;
+			latitude: number;
+			longitude: number;
+			color: string;
+		}>;
+		links: Array<{
+			fromCityId: string;
+			toCityId: string;
+			fromLatitude: number;
+			fromLongitude: number;
+			toLatitude: number;
+			toLongitude: number;
+			color: string;
+		}>;
+	};
+
+	type FocusTarget = {
+		latitude: number;
+		longitude: number;
+	};
+
 	type CesiumModule = typeof import('cesium');
 
 	let {
 		markers = [],
 		selectedMarkerId = null,
+		newsRelationshipOverlay = null,
+		newsFocusTarget = null,
 		onMarkerOpen,
 		onMarkerClose
 	} = $props<{
 		markers?: MapMarker[];
 		selectedMarkerId?: string | null;
+		newsRelationshipOverlay?: NewsRelationshipOverlay | null;
+		newsFocusTarget?: FocusTarget | null;
 		onMarkerOpen?: (markerId: string) => void;
 		onMarkerClose?: () => void;
 	}>();
@@ -47,6 +74,7 @@
 	let clickHandler: ScreenSpaceEventHandler | null = null;
 	let cameraMoveEndHandler: (() => void) | null = null;
 	const markerEntities = new Map<string, Entity>();
+	const relationshipEntities = new Map<string, Entity>();
 	let echartsModule: typeof import('echarts') | null = null;
 	let wordCloudReady = $state(false);
 	let popupCloudContainer = $state<HTMLDivElement | null>(null);
@@ -95,6 +123,64 @@
 		markerEntities.clear();
 	};
 
+	const clearRelationshipEntities = () => {
+		if (!viewer) {
+			return;
+		}
+		for (const entity of relationshipEntities.values()) {
+			viewer.entities.remove(entity);
+		}
+		relationshipEntities.clear();
+	};
+
+	const renderRelationshipOverlay = () => {
+		if (!viewer || !cesium) {
+			return;
+		}
+
+		clearRelationshipEntities();
+		if (!newsRelationshipOverlay) {
+			viewer.scene.requestRender();
+			return;
+		}
+
+		for (const highlight of newsRelationshipOverlay.highlights) {
+			const marker = viewer.entities.add({
+				position: cesium.Cartesian3.fromDegrees(highlight.longitude, highlight.latitude),
+				point: {
+					pixelSize: 13,
+					color: cesium.Color.fromCssColorString(highlight.color).withAlpha(0.9),
+					outlineColor: cesium.Color.fromCssColorString(highlight.color).withAlpha(0.38),
+					outlineWidth: 7
+				}
+			});
+			relationshipEntities.set(`highlight:${highlight.cityId}:${highlight.color}`, marker);
+		}
+
+		for (const link of newsRelationshipOverlay.links) {
+			const arc = viewer.entities.add({
+				polyline: {
+					positions: cesium.Cartesian3.fromDegreesArray([
+						link.fromLongitude,
+						link.fromLatitude,
+						link.toLongitude,
+						link.toLatitude
+					]),
+					width: 3,
+					arcType: cesium.ArcType.GEODESIC,
+					material: new cesium.PolylineGlowMaterialProperty({
+						glowPower: 0.22,
+						taperPower: 0.62,
+						color: cesium.Color.fromCssColorString(link.color).withAlpha(0.95)
+					})
+				}
+			});
+			relationshipEntities.set(`link:${link.fromCityId}:${link.toCityId}:${link.color}`, arc);
+		}
+
+		viewer.scene.requestRender();
+	};
+
 	const focusMarker = (markerId: string) => {
 		if (!viewer || !cesium) {
 			return;
@@ -112,6 +198,23 @@
 		const offsetLongitude = marker.longitude + longitudeOffsetFromMeters(offsetMeters, marker.latitude);
 		viewer.camera.flyTo({
 			destination: cesium.Cartesian3.fromDegrees(offsetLongitude, marker.latitude, targetHeight),
+			duration: 1.05
+		});
+	};
+
+	const focusCoordinates = (focusTarget: FocusTarget) => {
+		if (!viewer || !cesium) {
+			return;
+		}
+
+		const targetHeight = ZOOM_HEIGHT_SCALE / 2 ** MAX_ZOOM;
+		const offsetMeters = Math.max(
+			SIDEBAR_COMPENSATION_MIN_METERS,
+			Math.min(SIDEBAR_COMPENSATION_MAX_METERS, targetHeight * SIDEBAR_COMPENSATION_FACTOR)
+		);
+		const offsetLongitude = focusTarget.longitude + longitudeOffsetFromMeters(offsetMeters, focusTarget.latitude);
+		viewer.camera.flyTo({
+			destination: cesium.Cartesian3.fromDegrees(offsetLongitude, focusTarget.latitude, targetHeight),
 			duration: 1.05
 		});
 	};
@@ -260,6 +363,17 @@
 	});
 
 	$effect(() => {
+		void newsRelationshipOverlay;
+		renderRelationshipOverlay();
+	});
+
+	$effect(() => {
+		if (newsFocusTarget) {
+			focusCoordinates(newsFocusTarget);
+		}
+	});
+
+	$effect(() => {
 		void wordCloudReady;
 		window.setTimeout(() => mountPopupWordCloud(), 0);
 	});
@@ -397,6 +511,7 @@
 			}
 			cameraMoveEndHandler = null;
 			clearEntities();
+			clearRelationshipEntities();
 			if (viewer) {
 				viewer.destroy();
 			}

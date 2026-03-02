@@ -1,12 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import NewsFeedCard from '$lib/components/NewsFeedCard.svelte';
-import OpenWorldGlobe from '$lib/components/OpenWorldGlobe.svelte';
-import AreaWordCloud from '$lib/components/AreaWordCloud.svelte';
+	import OpenWorldGlobe from '$lib/components/OpenWorldGlobe.svelte';
+	import AreaWordCloud from '$lib/components/AreaWordCloud.svelte';
+	import PublishedTimeSlider from '$lib/components/PublishedTimeSlider.svelte';
 
 	type NewsPayload = {
 		items: NewsCard[];
 		polled_at: string;
+		window_start: string | null;
+		window_end: string | null;
+		min_published_time: string | null;
 		page: number;
 		page_size: number;
 		total_items: number;
@@ -22,6 +26,7 @@ import AreaWordCloud from '$lib/components/AreaWordCloud.svelte';
 
 	type MapMarker = {
 		id: string;
+		cityId: string;
 		latitude: number;
 		longitude: number;
 		title: string;
@@ -32,23 +37,58 @@ import AreaWordCloud from '$lib/components/AreaWordCloud.svelte';
 		articleIds: string[];
 	};
 
+	type NewsCity = {
+		city_id: string;
+		city: string;
+		country: string;
+		latitude: number | null;
+		longitude: number | null;
+	};
+
+	type NewsRelationship = {
+		from_city_id: string;
+		to_city_id: string;
+		relation_type: 'Assault' | 'Cooperate' | 'Independent';
+		relation_note: string | null;
+	};
+
+	type GlobeRelationshipOverlay = {
+		highlights: Array<{
+			cityId: string;
+			latitude: number;
+			longitude: number;
+			color: string;
+		}>;
+		links: Array<{
+			fromCityId: string;
+			toCityId: string;
+			fromLatitude: number;
+			fromLongitude: number;
+			toLatitude: number;
+			toLongitude: number;
+			color: string;
+		}>;
+	};
+
+	type GlobeFocusTarget = {
+		latitude: number;
+		longitude: number;
+	};
+
 	type NewsCard = {
-		id: string;
+		id: number;
 		rss_item_id: string;
 		source: string;
 		source_title: string;
 		source_link: string;
 		summary: string | null;
 		time_published: string;
-		city_id: string | null;
-		city: string | null;
-		country: string | null;
-		latitude: number | null;
-		longitude: number | null;
+		cities: NewsCity[];
+		relationships: NewsRelationship[];
 		keyword_theme_upper: string;
 		keyword_theme_lower: string;
-		keyword_action_upper: string;
-		keyword_action_lower: string;
+		llm_model: string;
+		gatekeeper_reason: string | null;
 		created_at: string;
 		updated_at: string;
 	};
@@ -61,8 +101,14 @@ import AreaWordCloud from '$lib/components/AreaWordCloud.svelte';
 	let intervalId: number | null = null;
 	let totalItems = $state(0);
 	let selectedMarkerId = $state<string | null>(null);
+	let selectedNewsId = $state<number | null>(null);
+	let newsFocusTarget = $state<GlobeFocusTarget | null>(null);
+	let minPublishedIso = $state<string | null>(null);
+	let windowStartMs = $state<number | null>(null);
+	let windowEndMs = $state<number | null>(null);
 	let feedPage = $state(1);
 	const FEED_PAGE_SIZE = 10;
+	const MAX_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 	const pollingOptions = [
 		{ label: '1 minute', value: 60_000 },
@@ -197,7 +243,15 @@ import AreaWordCloud from '$lib/components/AreaWordCloud.svelte';
 		error = '';
 
 		try {
-			const response = await fetch('/api/news');
+			const requestUrl = new URL('/api/news', window.location.origin);
+			if (windowStartMs !== null) {
+				requestUrl.searchParams.set('start', new Date(windowStartMs).toISOString());
+			}
+			if (windowEndMs !== null) {
+				requestUrl.searchParams.set('end', new Date(windowEndMs).toISOString());
+			}
+
+			const response = await fetch(requestUrl.toString());
 			if (!response.ok) {
 				throw new Error(`Failed to poll news feed: ${response.status}`);
 			}
@@ -210,6 +264,18 @@ import AreaWordCloud from '$lib/components/AreaWordCloud.svelte';
 			feed = payload.items;
 			lastPolledAt = payload.polled_at;
 			totalItems = payload.total_items;
+			minPublishedIso = payload.min_published_time;
+
+			if (payload.window_start) {
+				windowStartMs = new Date(payload.window_start).getTime();
+			}
+			if (payload.window_end) {
+				windowEndMs = new Date(payload.window_end).getTime();
+			}
+
+			if (selectedNewsId !== null && !payload.items.some((item) => item.id === selectedNewsId)) {
+				selectedNewsId = null;
+			}
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Unknown poll error';
 		} finally {
@@ -238,6 +304,23 @@ import AreaWordCloud from '$lib/components/AreaWordCloud.svelte';
 			pollingMs = nextValue;
 			resetPollingTimer();
 		}
+	};
+
+	const onTimeWindowChange = (nextStart: number) => {
+		if (minPublishedIso === null || !lastPolledAt) {
+			return;
+		}
+
+		const minMs = new Date(minPublishedIso).getTime();
+		const maxMs = new Date(lastPolledAt).getTime();
+		const windowMs = Math.min(MAX_WINDOW_MS, Math.max(0, maxMs - minMs));
+		const latestStart = Math.max(minMs, maxMs - windowMs);
+		const boundedStart = Math.min(Math.max(nextStart, minMs), latestStart);
+		const boundedEnd = boundedStart + windowMs;
+
+		windowEndMs = boundedEnd;
+		windowStartMs = boundedStart;
+		void fetchNews();
 	};
 
 	onMount(() => {
@@ -278,21 +361,42 @@ import AreaWordCloud from '$lib/components/AreaWordCloud.svelte';
 		return 'Location unavailable';
 	};
 
-const describeThemeMix = (marker: MapMarker) => {
-	const parts = marker.segments
-		.slice(0, 4)
-		.map((segment) => `${segment.label}: ${segment.weight}`)
-		.join(' | ');
-	return parts.length > 0 ? `Theme mix: ${parts}` : 'Theme mix: n/a';
-};
+	const formatLocationsForCard = (cities: NewsCity[]) => {
+		if (cities.length === 0) {
+			return 'Location unavailable';
+		}
+		if (cities.length === 1) {
+			return formatLocation(cities[0].city, cities[0].country);
+		}
 
-	const getNumericCoords = (item: NewsCard): { lat: number; lon: number } | null => {
-		if (item.latitude === null || item.longitude === null) {
+		const first = formatLocation(cities[0].city, cities[0].country);
+		return `${first} +${cities.length - 1} more`;
+	};
+
+	const summarizeRelationship = (item: NewsCard): string | null => {
+		if (item.relationships.length === 0) {
 			return null;
 		}
 
-		const lat = Number(item.latitude);
-		const lon = Number(item.longitude);
+		const uniqueTypes = [...new Set(item.relationships.map((entry) => entry.relation_type))];
+		return uniqueTypes.join(', ');
+	};
+
+	const describeThemeMix = (marker: MapMarker) => {
+		const parts = marker.segments
+			.slice(0, 4)
+			.map((segment) => `${segment.label}: ${segment.weight}`)
+			.join(' | ');
+		return parts.length > 0 ? `Theme mix: ${parts}` : 'Theme mix: n/a';
+	};
+
+	const getNumericCoords = (city: NewsCity): { lat: number; lon: number } | null => {
+		if (city.latitude === null || city.longitude === null) {
+			return null;
+		}
+
+		const lat = Number(city.latitude);
+		const lon = Number(city.longitude);
 		if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
 			return null;
 		}
@@ -300,45 +404,66 @@ const describeThemeMix = (marker: MapMarker) => {
 		return { lat, lon };
 	};
 
-	const markerKeyForItem = (item: NewsCard): string | null => {
-		const coords = getNumericCoords(item);
+	const markerKeyForCity = (city: NewsCity): string | null => {
+		const coords = getNumericCoords(city);
 		if (!coords) {
 			return null;
 		}
 
-		return `${coords.lat.toFixed(4)}:${coords.lon.toFixed(4)}`;
+		return city.city_id || `${coords.lat.toFixed(4)}:${coords.lon.toFixed(4)}`;
+	};
+
+	const primaryCoordsForNews = (item: NewsCard): GlobeFocusTarget | null => {
+		if (item.cities.length === 0) {
+			return null;
+		}
+
+		const firstCoords = getNumericCoords(item.cities[0]);
+		if (firstCoords) {
+			return { latitude: firstCoords.lat, longitude: firstCoords.lon };
+		}
+
+		for (const city of item.cities) {
+			const coords = getNumericCoords(city);
+			if (coords) {
+				return { latitude: coords.lat, longitude: coords.lon };
+			}
+		}
+
+		return null;
 	};
 
 	const buildMapMarkers = (items: NewsCard[]): MapMarker[] => {
-			const grouped = new Map<
-				string,
-				{
-					latitude: number;
-					longitude: number;
-					location: string;
-					total: number;
-					themes: Map<string, number>;
-					words: Map<string, number>;
-					articleIds: string[];
-					latestTime: string;
-				}
-			>();
+		const grouped = new Map<
+			string,
+			{
+				cityId: string;
+				latitude: number;
+				longitude: number;
+				location: string;
+				total: number;
+				themes: Map<string, number>;
+				words: Map<string, number>;
+				articleIds: string[];
+				latestTime: string;
+			}
+		>();
 
-			for (const item of items) {
-				if (item.latitude === null || item.longitude === null) {
-					continue;
-				}
-
-				const key = markerKeyForItem(item);
+		for (const item of items) {
+			for (const city of item.cities) {
+				const key = markerKeyForCity(city);
 				if (!key) {
 					continue;
 				}
-				const coords = getNumericCoords(item);
+
+				const coords = getNumericCoords(city);
 				if (!coords) {
 					continue;
 				}
+
 				const current = grouped.get(key);
 				const theme = item.keyword_theme_upper.trim() || 'UNKNOWN';
+				const itemId = String(item.id);
 
 				if (!current) {
 					const themeMap = new Map<string, number>();
@@ -351,13 +476,14 @@ const describeThemeMix = (marker: MapMarker) => {
 						wordMap.set(word, (wordMap.get(word) ?? 0) + 1);
 					}
 					grouped.set(key, {
+						cityId: city.city_id,
 						latitude: coords.lat,
 						longitude: coords.lon,
-						location: formatLocation(item.city, item.country),
+						location: formatLocation(city.city, city.country),
 						total: 1,
 						themes: themeMap,
 						words: wordMap,
-						articleIds: [item.id],
+						articleIds: [itemId],
 						latestTime: item.time_published
 					});
 					continue;
@@ -372,40 +498,42 @@ const describeThemeMix = (marker: MapMarker) => {
 				for (const word of tokenize(item.source_title)) {
 					current.words.set(word, (current.words.get(word) ?? 0) + 1);
 				}
-				current.articleIds.push(item.id);
+				if (!current.articleIds.includes(itemId)) {
+					current.articleIds.push(itemId);
+				}
 			}
+		}
 
-			const markers: MapMarker[] = [...grouped.entries()]
-				.map(([key, group]) => {
-					const segments = [...group.themes.entries()]
-						.sort((a, b) => b[1] - a[1])
-						.map(([theme, weight]) => ({
-							label: theme,
-							weight,
-							color: colorForTheme(theme)
-						}));
+		return [...grouped.entries()]
+			.map(([key, group]) => {
+				const segments = [...group.themes.entries()]
+					.sort((a, b) => b[1] - a[1])
+					.map(([theme, weight]) => ({
+						label: theme,
+						weight,
+						color: colorForTheme(theme)
+					}));
 
-					const wordCloud = [...group.words.entries()]
-						.sort((a, b) => b[1] - a[1])
-						.slice(0, 12)
-						.map(([word, weight]) => ({ word, weight }));
+				const wordCloud = [...group.words.entries()]
+					.sort((a, b) => b[1] - a[1])
+					.slice(0, 12)
+					.map(([word, weight]) => ({ word, weight }));
 
-					return {
-						id: key,
-						latitude: group.latitude,
-						longitude: group.longitude,
-						title: group.location,
-						detail: `${group.total} article(s) - ${formatTime(group.latestTime)} - ${group.latitude.toFixed(4)}, ${group.longitude.toFixed(4)}`,
-						total: group.total,
-						segments,
-						wordCloud,
-						articleIds: group.articleIds
-					};
-				})
-				.sort((a, b) => b.total - a.total);
-
-			return markers;
-		};
+				return {
+					id: key,
+					cityId: group.cityId,
+					latitude: group.latitude,
+					longitude: group.longitude,
+					title: group.location,
+					detail: `${group.total} article(s) - ${formatTime(group.latestTime)} - ${group.latitude.toFixed(4)}, ${group.longitude.toFixed(4)}`,
+					total: group.total,
+					segments,
+					wordCloud,
+					articleIds: group.articleIds
+				};
+			})
+			.sort((a, b) => b.total - a.total);
+	};
 
 	const mapMarkers = $derived.by(() => buildMapMarkers(feed));
 
@@ -420,7 +548,95 @@ const describeThemeMix = (marker: MapMarker) => {
 		}
 
 		const idSet = new Set(activeMarker.articleIds);
-		return feed.filter((item) => idSet.has(item.id));
+		return feed.filter((item) => idSet.has(String(item.id)));
+	});
+
+	const selectedNews = $derived.by(() =>
+		selectedNewsId === null ? null : feed.find((item) => item.id === selectedNewsId) ?? null
+	);
+
+	const selectedNewsRelationship = $derived.by<GlobeRelationshipOverlay | null>(() => {
+		if (!selectedNews || selectedNews.cities.length < 2) {
+			return null;
+		}
+
+		const BLUE = '#2ac6ff';
+		const GREEN = '#45ff95';
+		const RED = '#ff4d4d';
+
+		const cityCoordMap = new Map<string, { latitude: number; longitude: number }>();
+		for (const city of selectedNews.cities) {
+			const coords = getNumericCoords(city);
+			if (!coords) {
+				continue;
+			}
+			cityCoordMap.set(city.city_id, { latitude: coords.lat, longitude: coords.lon });
+		}
+
+		if (cityCoordMap.size < 2) {
+			return null;
+		}
+
+		const highlights = new Map<string, GlobeRelationshipOverlay['highlights'][number]>();
+		const links = new Map<string, GlobeRelationshipOverlay['links'][number]>();
+
+		const addHighlight = (cityId: string, color: string) => {
+			const coords = cityCoordMap.get(cityId);
+			if (!coords) {
+				return;
+			}
+			highlights.set(`${cityId}:${color}`, {
+				cityId,
+				latitude: coords.latitude,
+				longitude: coords.longitude,
+				color
+			});
+		};
+
+		const addLink = (fromCityId: string, toCityId: string, color: string) => {
+			const from = cityCoordMap.get(fromCityId);
+			const to = cityCoordMap.get(toCityId);
+			if (!from || !to) {
+				return;
+			}
+			links.set(`${fromCityId}:${toCityId}:${color}`, {
+				fromCityId,
+				toCityId,
+				fromLatitude: from.latitude,
+				fromLongitude: from.longitude,
+				toLatitude: to.latitude,
+				toLongitude: to.longitude,
+				color
+			});
+		};
+
+		if (selectedNews.relationships.length === 0) {
+			for (const cityId of cityCoordMap.keys()) {
+				addHighlight(cityId, BLUE);
+			}
+			return {
+				highlights: [...highlights.values()],
+				links: []
+			};
+		}
+
+		for (const relation of selectedNews.relationships) {
+			if (relation.relation_type === 'Independent') {
+				addHighlight(relation.from_city_id, BLUE);
+				addHighlight(relation.to_city_id, BLUE);
+				continue;
+			}
+
+			const color = relation.relation_type === 'Cooperate' ? GREEN : RED;
+			addHighlight(relation.from_city_id, color);
+			addHighlight(relation.to_city_id, color);
+			addLink(relation.from_city_id, relation.to_city_id, color);
+		}
+
+		return {
+			highlights: [...highlights.values()],
+			links: [...links.values()]
+		};
 	});
 
 	const totalFeedPages = $derived.by(() => Math.max(1, Math.ceil(filteredFeed.length / FEED_PAGE_SIZE)));
@@ -461,6 +677,18 @@ const describeThemeMix = (marker: MapMarker) => {
 		resetPollingTimer();
 	};
 
+	const toggleNewsSelection = (newsId: number) => {
+		if (selectedNewsId === newsId) {
+			selectedNewsId = null;
+			newsFocusTarget = null;
+			return;
+		}
+
+		selectedNewsId = newsId;
+		const selectedItem = feed.find((item) => item.id === newsId);
+		newsFocusTarget = selectedItem ? primaryCoordsForNews(selectedItem) : null;
+	};
+
 	const gotoPrevFeedPage = () => {
 		if (feedPage > 1) {
 			feedPage -= 1;
@@ -479,6 +707,8 @@ const describeThemeMix = (marker: MapMarker) => {
 	<OpenWorldGlobe
 		markers={mapMarkers}
 		selectedMarkerId={selectedMarkerId}
+		newsRelationshipOverlay={selectedNewsRelationship}
+		newsFocusTarget={newsFocusTarget}
 		onMarkerOpen={onMarkerOpen}
 		onMarkerClose={onMarkerClose}
 	/>
@@ -488,7 +718,7 @@ const describeThemeMix = (marker: MapMarker) => {
 			<section class="title-overlay">
 				<p class="eyebrow">Globe</p>
 				<h1>Global Context and Event Console</h1>
-				<p>Showing geolocated market-related news published in the latest 24 hours.</p>
+				<p>Showing geolocated market-related news ordered by published time. Time window supports up to 48 hours.</p>
 			</section>
 
 			<section class="news-overlay">
@@ -525,6 +755,15 @@ const describeThemeMix = (marker: MapMarker) => {
 					<p class="map-debug">{mapMarkers.length} markers | {feed.length} rows | {totalItems} total</p>
 				</div>
 
+				<PublishedTimeSlider
+					minMs={minPublishedIso ? new Date(minPublishedIso).getTime() : null}
+					maxMs={lastPolledAt ? new Date(lastPolledAt).getTime() : null}
+					startMs={windowStartMs}
+					maxWindowMs={MAX_WINDOW_MS}
+					onChangeStart={onTimeWindowChange}
+					disabled={loading}
+				/>
+
 				{#if selectedMarker}
 					<div class="active-filter">
 						<span>Filtered by area: {selectedMarker.title} ({selectedMarker.total} articles)</span>
@@ -537,7 +776,7 @@ const describeThemeMix = (marker: MapMarker) => {
 				{#if error}
 					<p class="error">{error}</p>
 				{:else if filteredFeed.length === 0}
-					<p class="muted">No cards in the last 24 hours.</p>
+					<p class="muted">No cards for the selected published-time range.</p>
 				{:else}
 					<div class="cards">
 						{#each pagedFeed as item}
@@ -547,9 +786,12 @@ const describeThemeMix = (marker: MapMarker) => {
 								summary={item.summary}
 								timeLabel={formatTime(item.time_published)}
 								link={item.source_link}
-								locationLabel={formatLocation(item.city, item.country)}
-								themeLabel={`${item.keyword_theme_upper} / ${item.keyword_theme_lower}`}
-								actionLabel={`${item.keyword_action_upper} / ${item.keyword_action_lower}`}
+								locationLabel={formatLocationsForCard(item.cities)}
+								themeUpperLabel={item.keyword_theme_upper}
+								themeLowerLabel={item.keyword_theme_lower}
+								geoRelationshipLabel={summarizeRelationship(item)}
+								selected={selectedNewsId === item.id}
+								onSelect={() => toggleNewsSelection(item.id)}
 							/>
 						{/each}
 					</div>
