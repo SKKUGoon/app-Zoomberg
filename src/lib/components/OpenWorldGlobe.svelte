@@ -98,6 +98,56 @@
 	};
 
 	const markerSize = (count: number) => Math.min(18, 7 + Math.sqrt(Math.max(1, count)) * 2.4);
+	const CURRENCY_GREEN = '#38b26d';
+	const CURRENCY_GREEN_SELECTED = '#6fe59a';
+	const DEVELOPED_STOCKS_BLUE = '#4d96ff';
+	const DEVELOPED_STOCKS_BLUE_SELECTED = '#8bbcff';
+	const EMERGING_STOCKS_ORANGE = '#f29f38';
+	const EMERGING_STOCKS_ORANGE_SELECTED = '#ffc06f';
+	const isOilAssetTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.includes('asset(oil)') || (normalized.includes('asset') && normalized.includes('oil'));
+	};
+	const isCurrencyAssetTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.includes('asset(currency)') || (normalized.includes('asset') && normalized.includes('currency'));
+	};
+	const isDevelopedStocksTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.includes('asset(developed market stocks)');
+	};
+	const isEmergingStocksTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.includes('asset(emerging market stocks)');
+	};
+	const isRealEstateTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.includes('asset(real estate)');
+	};
+	const isPolicyTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.startsWith('policy') || normalized.includes('policy(');
+	};
+	const oilBarrelIconDataUrl = (fillColor: string) => {
+		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44" fill="${fillColor}"><path d="M160-120q-17 0-28.5-11.5T120-160q0-17 11.5-28.5T160-200h40v-240h-40q-17 0-28.5-11.5T120-480q0-17 11.5-28.5T160-520h40v-240h-40q-17 0-28.5-11.5T120-800q0-17 11.5-28.5T160-840h640q17 0 28.5 11.5T840-800q0 17-11.5 28.5T800-760h-40v240h40q17 0 28.5 11.5T840-480q0 17-11.5 28.5T800-440h-40v240h40q17 0 28.5 11.5T840-160q0 17-11.5 28.5T800-120H160Zm120-80h400v-240q-17 0-28.5-11.5T640-480q0-17 11.5-28.5T680-520v-240H280v240q17 0 28.5 11.5T320-480q0 17-11.5 28.5T280-440v240Zm285-154.5q35-34.5 35-83.5 0-39-22.5-67T480-620q-75 86-97.5 114.5T360-438q0 49 35 83.5t85 34.5q50 0 85-34.5ZM280-200v-560 560Z"/></svg>`;
+		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+	};
+	const currencyIconDataUrl = (fillColor: string) => {
+		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44" fill="${fillColor}"><path d="M600-320h160v-160h-60v100H600v60Zm-120-40q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM200-480h60v-100h100v-60H200v160ZM80-200v-560h800v560H80Zm80-80h640v-400H160v400Zm0 0v-400 400Z"/></svg>`;
+		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+	};
+	const stocksIconDataUrl = (fillColor: string) => {
+		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44" fill="${fillColor}"><path d="M200-280v-280h80v280h-80Zm240 0v-280h80v280h-80ZM80-120v-80h800v80H80Zm600-160v-280h80v280h-80ZM80-640v-80l400-200 400 200v80H80Zm178-80h444-444Zm0 0h444L480-830 258-720Z"/></svg>`;
+		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+	};
+	const realEstateIconDataUrl = (fillColor: string) => {
+		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44" fill="${fillColor}"><path d="M120-120v-560h160v-160h400v320h160v400H520v-160h-80v160H120Zm80-80h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 320h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 480h80v-80h-80v80Zm0-160h80v-80h-80v80Z"/></svg>`;
+		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+	};
+	const policyIconDataUrl = (fillColor: string) => {
+		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44" fill="${fillColor}"><path d="M160-120v-80h480v80H160Zm226-194L160-540l84-86 228 226-86 86Zm254-254L414-796l86-84 226 226-86 86Zm184 408L302-682l56-56 522 522-56 56Z"/></svg>`;
+		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+	};
 
 	const markerTooltip = (marker: MapMarker) => {
 		const parts = marker.segments
@@ -333,17 +383,60 @@
 			}
 
 			const colorHex = marker.segments.length > 0 ? marker.segments[0].color : '#f2a93b';
+			const dominantTheme = marker.segments[0]?.label ?? '';
+			const useOilIcon = isOilAssetTheme(dominantTheme);
+			const useCurrencyIcon = isCurrencyAssetTheme(dominantTheme);
+			const useDevelopedStocksIcon = isDevelopedStocksTheme(dominantTheme);
+			const useEmergingStocksIcon = isEmergingStocksTheme(dominantTheme);
+			const useRealEstateIcon = isRealEstateTheme(dominantTheme);
+			const usePolicyIcon = isPolicyTheme(dominantTheme);
+			const useStocksIcon = useDevelopedStocksIcon || useEmergingStocksIcon;
 			const baseColor = toColor(colorHex, '#f2a93b') ?? cesium.Color.ORANGE;
 			const activeColor = cesium.Color.fromCssColorString('#f7bf66');
+			const markerColorHex = useCurrencyIcon
+				? marker.id === selectedMarkerId
+					? CURRENCY_GREEN_SELECTED
+					: CURRENCY_GREEN
+				: useDevelopedStocksIcon
+					? marker.id === selectedMarkerId
+						? DEVELOPED_STOCKS_BLUE_SELECTED
+						: DEVELOPED_STOCKS_BLUE
+					: useEmergingStocksIcon
+						? marker.id === selectedMarkerId
+							? EMERGING_STOCKS_ORANGE_SELECTED
+							: EMERGING_STOCKS_ORANGE
+				: marker.id === selectedMarkerId
+					? '#f7bf66'
+					: colorHex;
+			const iconSize = Math.round(markerSize(marker.total) + 12);
 
 			const entity = viewer.entities.add({
 				position: cesium.Cartesian3.fromDegrees(marker.longitude, marker.latitude),
-				point: {
-					pixelSize: markerSize(marker.total),
-					color: marker.id === selectedMarkerId ? activeColor : baseColor,
-					outlineColor: cesium.Color.fromCssColorString('#0a0e13'),
-					outlineWidth: marker.id === selectedMarkerId ? 2.4 : 1.4
-				},
+				point: useOilIcon || useCurrencyIcon || useStocksIcon || useRealEstateIcon || usePolicyIcon
+					? undefined
+					: {
+							pixelSize: markerSize(marker.total),
+							color: marker.id === selectedMarkerId ? activeColor : baseColor,
+							outlineColor: cesium.Color.fromCssColorString('#0a0e13'),
+							outlineWidth: marker.id === selectedMarkerId ? 2.4 : 1.4
+						},
+				billboard: useOilIcon || useCurrencyIcon || useStocksIcon || useRealEstateIcon || usePolicyIcon
+					? {
+							image: useOilIcon
+								? oilBarrelIconDataUrl(markerColorHex)
+								: useCurrencyIcon
+									? currencyIconDataUrl(markerColorHex)
+									: useStocksIcon
+										? stocksIconDataUrl(markerColorHex)
+										: useRealEstateIcon
+											? realEstateIconDataUrl(markerColorHex)
+											: policyIconDataUrl(markerColorHex),
+							width: iconSize,
+							height: iconSize,
+							disableDepthTestDistance: Number.POSITIVE_INFINITY,
+							verticalOrigin: cesium.VerticalOrigin.CENTER
+						}
+					: undefined,
 				properties: {
 					markerId: marker.id
 				}
@@ -362,10 +455,53 @@
 
 		for (const marker of markers) {
 			const entity = markerEntities.get(marker.id);
-			if (!entity || !entity.point) {
+			if (!entity) {
 				continue;
 			}
 			const isActive = marker.id === selectedMarkerId;
+			const dominantTheme = marker.segments[0]?.label ?? '';
+			const useOilIcon = isOilAssetTheme(dominantTheme);
+			const useCurrencyIcon = isCurrencyAssetTheme(dominantTheme);
+			const useDevelopedStocksIcon = isDevelopedStocksTheme(dominantTheme);
+			const useEmergingStocksIcon = isEmergingStocksTheme(dominantTheme);
+			const useRealEstateIcon = isRealEstateTheme(dominantTheme);
+			const usePolicyIcon = isPolicyTheme(dominantTheme);
+			const useStocksIcon = useDevelopedStocksIcon || useEmergingStocksIcon;
+
+			if ((useOilIcon || useCurrencyIcon || useStocksIcon || useRealEstateIcon || usePolicyIcon) && entity.billboard) {
+				const markerColorHex = useCurrencyIcon
+					? isActive
+						? CURRENCY_GREEN_SELECTED
+						: CURRENCY_GREEN
+					: useDevelopedStocksIcon
+						? isActive
+							? DEVELOPED_STOCKS_BLUE_SELECTED
+							: DEVELOPED_STOCKS_BLUE
+						: useEmergingStocksIcon
+							? isActive
+								? EMERGING_STOCKS_ORANGE_SELECTED
+								: EMERGING_STOCKS_ORANGE
+					: isActive
+						? '#f7bf66'
+						: marker.segments[0]?.color ?? '#f2a93b';
+				entity.billboard.image = new cesium.ConstantProperty(
+					useOilIcon
+						? oilBarrelIconDataUrl(markerColorHex)
+						: useCurrencyIcon
+							? currencyIconDataUrl(markerColorHex)
+							: useStocksIcon
+								? stocksIconDataUrl(markerColorHex)
+								: useRealEstateIcon
+									? realEstateIconDataUrl(markerColorHex)
+									: policyIconDataUrl(markerColorHex)
+				);
+				continue;
+			}
+
+			if (!entity.point) {
+				continue;
+			}
+
 			entity.point.color = new cesium.ConstantProperty(
 				isActive
 					? cesium.Color.fromCssColorString('#f7bf66')

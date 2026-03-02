@@ -242,6 +242,33 @@
 
 		return themePalette[hash % themePalette.length];
 	};
+	const isOilAssetTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.includes('asset(oil)') || (normalized.includes('asset') && normalized.includes('oil'));
+	};
+	const isCurrencyAssetTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.includes('asset(currency)') || (normalized.includes('asset') && normalized.includes('currency'));
+	};
+	const isDevelopedStocksTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.includes('asset(developed market stocks)');
+	};
+	const isEmergingStocksTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.includes('asset(emerging market stocks)');
+	};
+	const isRealEstateTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.includes('asset(real estate)');
+	};
+	const isPolicyTheme = (themeLabel: string) => {
+		const normalized = themeLabel.toLowerCase();
+		return normalized.startsWith('policy') || normalized.includes('policy(');
+	};
+	const CURRENCY_GREEN = '#38b26d';
+	const DEVELOPED_STOCKS_BLUE = '#4d96ff';
+	const EMERGING_STOCKS_ORANGE = '#f29f38';
 
 	const fetchNews = async () => {
 		loading = true;
@@ -559,7 +586,22 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 			}
 		}
 		return [...legendMap.entries()]
-			.map(([label, color]) => ({ label, color }))
+			.map(([label, color]) => ({
+				label,
+				color: isCurrencyAssetTheme(label)
+					? CURRENCY_GREEN
+					: isDevelopedStocksTheme(label)
+						? DEVELOPED_STOCKS_BLUE
+						: isEmergingStocksTheme(label)
+							? EMERGING_STOCKS_ORANGE
+							: color,
+				isOil: isOilAssetTheme(label),
+				isCurrency: isCurrencyAssetTheme(label),
+				isDevelopedStocks: isDevelopedStocksTheme(label),
+				isEmergingStocks: isEmergingStocksTheme(label),
+				isRealEstate: isRealEstateTheme(label),
+				isPolicy: isPolicyTheme(label)
+			}))
 			.sort((a, b) => a.label.localeCompare(b.label));
 	});
 
@@ -843,7 +885,69 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 			<div class="map-legend-list">
 				{#each markerThemeLegend as item}
 					<div class="map-legend-item">
-						<span class="map-legend-color" style={`background-color:${item.color}`} aria-hidden="true"></span>
+						{#if item.isOil}
+							<svg
+								class="map-legend-oil-icon"
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 -960 960 960"
+								aria-hidden="true"
+							>
+								<path
+									fill={item.color}
+									d="M160-120q-17 0-28.5-11.5T120-160q0-17 11.5-28.5T160-200h40v-240h-40q-17 0-28.5-11.5T120-480q0-17 11.5-28.5T160-520h40v-240h-40q-17 0-28.5-11.5T120-800q0-17 11.5-28.5T160-840h640q17 0 28.5 11.5T840-800q0 17-11.5 28.5T800-760h-40v240h40q17 0 28.5 11.5T840-480q0 17-11.5 28.5T800-440h-40v240h40q17 0 28.5 11.5T840-160q0 17-11.5 28.5T800-120H160Zm120-80h400v-240q-17 0-28.5-11.5T640-480q0-17 11.5-28.5T680-520v-240H280v240q17 0 28.5 11.5T320-480q0 17-11.5 28.5T280-440v240Zm285-154.5q35-34.5 35-83.5 0-39-22.5-67T480-620q-75 86-97.5 114.5T360-438q0 49 35 83.5t85 34.5q50 0 85-34.5ZM280-200v-560 560Z"
+								/>
+							</svg>
+						{:else if item.isCurrency}
+							<svg
+								class="map-legend-currency-icon"
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 -960 960 960"
+								aria-hidden="true"
+							>
+								<path
+									fill={item.color}
+									d="M600-320h160v-160h-60v100H600v60Zm-120-40q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM200-480h60v-100h100v-60H200v160ZM80-200v-560h800v560H80Zm80-80h640v-400H160v400Zm0 0v-400 400Z"
+								/>
+							</svg>
+						{:else if item.isDevelopedStocks || item.isEmergingStocks}
+							<svg
+								class="map-legend-stocks-icon"
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 -960 960 960"
+								aria-hidden="true"
+							>
+								<path
+									fill={item.color}
+									d="M200-280v-280h80v280h-80Zm240 0v-280h80v280h-80ZM80-120v-80h800v80H80Zm600-160v-280h80v280h-80ZM80-640v-80l400-200 400 200v80H80Zm178-80h444-444Zm0 0h444L480-830 258-720Z"
+								/>
+							</svg>
+						{:else if item.isRealEstate}
+							<svg
+								class="map-legend-real-estate-icon"
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 -960 960 960"
+								aria-hidden="true"
+							>
+								<path
+									fill={item.color}
+									d="M120-120v-560h160v-160h400v320h160v400H520v-160h-80v160H120Zm80-80h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 320h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 480h80v-80h-80v80Zm0-160h80v-80h-80v80Z"
+								/>
+							</svg>
+						{:else if item.isPolicy}
+							<svg
+								class="map-legend-policy-icon"
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 -960 960 960"
+								aria-hidden="true"
+							>
+								<path
+									fill={item.color}
+									d="M160-120v-80h480v80H160Zm226-194L160-540l84-86 228 226-86 86Zm254-254L414-796l86-84 226 226-86 86Zm184 408L302-682l56-56 522 522-56 56Z"
+								/>
+							</svg>
+						{:else}
+							<span class="map-legend-color" style={`background-color:${item.color}`} aria-hidden="true"></span>
+						{/if}
 						<span class="map-legend-label">{item.label}</span>
 					</div>
 				{/each}
@@ -911,6 +1015,36 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		border-radius: 999px;
 		flex: 0 0 auto;
 		border: 1px solid #ffffff3d;
+	}
+
+	.map-legend-oil-icon {
+		width: 0.9rem;
+		height: 0.9rem;
+		flex: 0 0 auto;
+	}
+
+	.map-legend-currency-icon {
+		width: 0.9rem;
+		height: 0.9rem;
+		flex: 0 0 auto;
+	}
+
+	.map-legend-stocks-icon {
+		width: 0.9rem;
+		height: 0.9rem;
+		flex: 0 0 auto;
+	}
+
+	.map-legend-real-estate-icon {
+		width: 0.9rem;
+		height: 0.9rem;
+		flex: 0 0 auto;
+	}
+
+	.map-legend-policy-icon {
+		width: 0.9rem;
+		height: 0.9rem;
+		flex: 0 0 auto;
 	}
 
 	.map-legend-label {
