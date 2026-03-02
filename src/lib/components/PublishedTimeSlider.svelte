@@ -188,6 +188,7 @@
 		border-radius: 0.44rem;
 		border: 1px solid #4f3b20;
 		background: #14110d;
+		min-width: 0;
 	}
 
 	.time-window-title {
@@ -299,5 +300,8 @@
 		margin: 0.26rem 0 0;
 		font: 500 0.67rem/1.2 'IBM Plex Mono', monospace;
 		color: #c5b49b;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 </style>

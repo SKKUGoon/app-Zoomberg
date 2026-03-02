@@ -1178,6 +1178,7 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		width: min(38rem, 47vw);
 		min-height: 0;
 		max-height: calc(100vh - (var(--globe-banner-offset) + var(--globe-banner-safe-top)) - (var(--globe-banner-offset) + var(--globe-banner-safe-bottom)));
+		overflow: hidden;
 	}
 
 	.globe-banner {
@@ -1282,9 +1283,13 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 	.news-overlay {
 		display: flex;
 		flex-direction: column;
+		justify-content: flex-start;
+		align-items: stretch;
 		padding: 0.8rem;
 		min-height: 0;
+		min-width: 0;
 		max-height: min(75vh, 49rem);
+		overflow: hidden;
 	}
 
 	.area-overlay {
@@ -1296,6 +1301,8 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		align-items: flex-start;
 		justify-content: space-between;
 		gap: 0.6rem;
+		min-width: 0;
+		flex-shrink: 0;
 	}
 
 	.panel-heading h2 {
@@ -1337,6 +1344,7 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		gap: 0.6rem;
 		overflow: auto;
 		min-height: 0;
+		min-width: 0;
 		scrollbar-width: none;
 		-ms-overflow-style: none;
 	}
@@ -1349,6 +1357,7 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 	.cards :global(.news-card) {
 		background: #111824ef;
 		border-color: #364353;
+		min-width: 0;
 	}
 
 	.controls {
@@ -1370,6 +1379,8 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		gap: 0.8rem;
 		align-items: center;
 		margin-bottom: 0.7rem;
+		min-width: 0;
+		flex-shrink: 0;
 	}
 
 	.filter-hint {
@@ -1465,8 +1476,8 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 	@media (min-width: 1100px) and (min-height: 700px) and (orientation: landscape) {
 		.sidebar-stack {
 			width: 38rem;
-			height: calc(100vh - 2rem);
-			max-height: calc(100vh - 2rem);
+			height: calc(100vh - (var(--globe-banner-offset) + var(--globe-banner-safe-top)) - (var(--globe-banner-offset) + var(--globe-banner-safe-bottom)));
+			max-height: calc(100vh - (var(--globe-banner-offset) + var(--globe-banner-safe-top)) - (var(--globe-banner-offset) + var(--globe-banner-safe-bottom)));
 		}
 
 		.title-overlay {
