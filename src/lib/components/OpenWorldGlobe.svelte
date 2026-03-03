@@ -8,53 +8,25 @@
 		ScreenSpaceEventHandler,
 		Viewer
 	} from 'cesium';
-
-	type MapMarker = {
-		id: string;
-	cityId?: string;
-		latitude: number;
-		longitude: number;
-		title: string;
-		detail: string;
-		total: number;
-		wordCloud: Array<{
-			word: string;
-			weight: number;
-		}>;
-		segments: Array<{
-			color: string;
-			weight: number;
-			label: string;
-		}>;
-	};
-
-	type NewsRelationshipOverlay = {
-		highlights: Array<{
-			cityId: string;
-			latitude: number;
-			longitude: number;
-			color: string;
-		}>;
-		links: Array<{
-			fromCityId: string;
-			toCityId: string;
-			fromLatitude: number;
-			fromLongitude: number;
-			toLatitude: number;
-			toLongitude: number;
-			color: string;
-		}>;
-	};
-
-	type FocusTarget = {
-	mode: 'point' | 'bounds';
-	latitude?: number;
-	longitude?: number;
-	coordinates?: Array<{
-		latitude: number;
-		longitude: number;
-	}>;
-	};
+	import {
+		CURRENCY_GREEN,
+		CURRENCY_GREEN_SELECTED,
+		DEVELOPED_STOCKS_BLUE,
+		DEVELOPED_STOCKS_BLUE_SELECTED,
+		EMERGING_STOCKS_ORANGE,
+		EMERGING_STOCKS_ORANGE_SELECTED,
+		isBondTheme,
+		isCommodityTheme,
+		isCurrencyAssetTheme,
+		isDevelopedStocksTheme,
+		isEmergingStocksTheme,
+		isEventsTheme,
+		isGoldTheme,
+		isOilAssetTheme,
+		isPolicyTheme,
+		isRealEstateTheme
+	} from '$lib/domain/themeTaxonomy';
+	import type { GlobeFocusTarget, GlobeRelationshipOverlay, MapMarker } from '$lib/types/news';
 
 	type CesiumModule = typeof import('cesium');
 
@@ -68,8 +40,8 @@
 	} = $props<{
 		markers?: MapMarker[];
 		selectedMarkerId?: string | null;
-		newsRelationshipOverlay?: NewsRelationshipOverlay | null;
-		newsFocusTarget?: FocusTarget | null;
+		newsRelationshipOverlay?: GlobeRelationshipOverlay | null;
+		newsFocusTarget?: GlobeFocusTarget | null;
 		onMarkerOpen?: (markerId: string) => void;
 		onMarkerClose?: () => void;
 	}>();
@@ -99,62 +71,16 @@
 	};
 
 	const markerSize = (count: number) => Math.min(18, 7 + Math.sqrt(Math.max(1, count)) * 2.4);
-	const CURRENCY_GREEN = '#38b26d';
-	const CURRENCY_GREEN_SELECTED = '#6fe59a';
-	const DEVELOPED_STOCKS_BLUE = '#4d96ff';
-	const DEVELOPED_STOCKS_BLUE_SELECTED = '#8bbcff';
-	const EMERGING_STOCKS_ORANGE = '#f29f38';
-	const EMERGING_STOCKS_ORANGE_SELECTED = '#ffc06f';
 	const relationGlowColorForMarker = (marker: MapMarker): string | null => {
 		if (!newsRelationshipOverlay || !marker.cityId) {
 			return null;
 		}
 		const highlight = newsRelationshipOverlay.highlights.find(
-			(entry: NewsRelationshipOverlay['highlights'][number]) => entry.cityId === marker.cityId
+			(entry: GlobeRelationshipOverlay['highlights'][number]) => entry.cityId === marker.cityId
 		);
 		return highlight?.color ?? null;
 	};
 
-	const isOilAssetTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.includes('asset(oil)') || (normalized.includes('asset') && normalized.includes('oil'));
-	};
-	const isCurrencyAssetTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.includes('asset(currency)') || (normalized.includes('asset') && normalized.includes('currency'));
-	};
-	const isDevelopedStocksTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.includes('asset(developed market stocks)');
-	};
-	const isEmergingStocksTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.includes('asset(emerging market stocks)');
-	};
-	const isRealEstateTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.includes('asset(real estate)');
-	};
-	const isPolicyTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.startsWith('policy') || normalized.includes('policy(');
-	};
-	const isBondTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.includes('asset(bond)') || (normalized.includes('asset') && normalized.includes('bond'));
-	};
-	const isCommodityTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.includes('asset(commodity)') || (normalized.includes('asset') && normalized.includes('commodity'));
-	};
-	const isEventsTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.startsWith('events') || normalized.includes('events(') || normalized.includes('event(');
-	};
-	const isGoldTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.includes('asset(gold)') || (normalized.includes('asset') && normalized.includes('gold'));
-	};
 	const oilBarrelIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
 		const glowBackdrop = glowColor
 			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
@@ -336,7 +262,7 @@
 		});
 	};
 
-	const focusCoordinates = (focusTarget: FocusTarget) => {
+	const focusCoordinates = (focusTarget: GlobeFocusTarget) => {
 		if (!viewer || !cesium) {
 			return;
 		}

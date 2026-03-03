@@ -1,119 +1,35 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import NewsFeedCard from '$lib/components/NewsFeedCard.svelte';
 	import OpenWorldGlobe from '$lib/components/OpenWorldGlobe.svelte';
-	import AreaWordCloud from '$lib/components/AreaWordCloud.svelte';
-	import PublishedTimeSlider from '$lib/components/PublishedTimeSlider.svelte';
+	import AreaContextPanel from '$lib/components/map/AreaContextPanel.svelte';
+	import FeedOverlayPanel from '$lib/components/map/FeedOverlayPanel.svelte';
+	import MapLegend from '$lib/components/map/MapLegend.svelte';
+	import MapTicker from '$lib/components/map/MapTicker.svelte';
+	import { buildMapMarkers, formatLocation, getNumericCoords } from '$lib/domain/markerBuilder';
+	import { NewsFeedState } from '$lib/stores/newsFeed.svelte';
+	import {
+		CURRENCY_GREEN,
+		DEVELOPED_STOCKS_BLUE,
+		EMERGING_STOCKS_ORANGE,
+		isBondTheme,
+		isCommodityTheme,
+		isCurrencyAssetTheme,
+		isDevelopedStocksTheme,
+		isEmergingStocksTheme,
+		isEventsTheme,
+		isGoldTheme,
+		isOilAssetTheme,
+		isPolicyTheme,
+		isRealEstateTheme
+	} from '$lib/domain/themeTaxonomy';
+	import type { GlobeFocusTarget, GlobeRelationshipOverlay, MapMarker, NewsCard, NewsCity } from '$lib/types/news';
 
-	type NewsPayload = {
-		items: NewsCard[];
-		polled_at: string;
-		window_start: string | null;
-		window_end: string | null;
-		min_published_time: string | null;
-		page: number;
-		page_size: number;
-		total_items: number;
-		total_pages: number;
-		error?: string;
-	};
-
-	type ThemeSegment = {
-		color: string;
-		weight: number;
-		label: string;
-	};
-
-	type MapMarker = {
-		id: string;
-		cityId: string;
-		latitude: number;
-		longitude: number;
-		title: string;
-		detail: string;
-		total: number;
-		segments: ThemeSegment[];
-		wordCloud: Array<{ word: string; weight: number }>;
-		articleIds: string[];
-	};
-
-	type NewsCity = {
-		city_id: string;
-		city: string;
-		country: string;
-		latitude: number | null;
-		longitude: number | null;
-	};
-
-	type NewsRelationship = {
-		from_city_id: string;
-		to_city_id: string;
-		relation_type: 'Assault' | 'Cooperate' | 'Independent';
-		relation_note: string | null;
-	};
-
-	type GlobeRelationshipOverlay = {
-		highlights: Array<{
-			cityId: string;
-			latitude: number;
-			longitude: number;
-			color: string;
-		}>;
-		links: Array<{
-			fromCityId: string;
-			toCityId: string;
-			fromLatitude: number;
-			fromLongitude: number;
-			toLatitude: number;
-			toLongitude: number;
-			color: string;
-		}>;
-	};
-
-	type GlobeFocusTarget = {
-	mode: 'point' | 'bounds';
-	latitude?: number;
-	longitude?: number;
-	coordinates?: Array<{
-		latitude: number;
-		longitude: number;
-	}>;
-	};
-
-	type NewsCard = {
-		id: number;
-		rss_item_id: string;
-		source: string;
-		source_title: string;
-		source_link: string;
-		summary: string | null;
-		time_published: string;
-		cities: NewsCity[];
-		relationships: NewsRelationship[];
-		keyword_theme_upper: string;
-		keyword_theme_lower: string;
-		llm_model: string;
-		gatekeeper_reason: string | null;
-		created_at: string;
-		updated_at: string;
-	};
-
-	let feed = $state<NewsCard[]>([]);
-	let lastPolledAt = $state('');
-	let loading = $state(false);
-	let error = $state('');
-	let pollingMs = $state(60_000);
-	let intervalId: number | null = null;
-	let totalItems = $state(0);
-	let selectedMarkerId = $state<string | null>(null);
-	let selectedNewsId = $state<number | null>(null);
-	let newsFocusTarget = $state<GlobeFocusTarget | null>(null);
-	let minPublishedIso = $state<string | null>(null);
-	let windowStartMs = $state<number | null>(null);
-	let windowEndMs = $state<number | null>(null);
-	let feedPage = $state(1);
-	const FEED_PAGE_SIZE = 10;
 	const MAX_WINDOW_MS = 48 * 60 * 60 * 1000;
+	const newsFeedState = new NewsFeedState({
+		maxWindowMs: MAX_WINDOW_MS,
+		initialPollingMs: 60_000,
+		feedPageSize: 10
+	});
 
 	const pollingOptions = [
 		{ label: '1 minute', value: 60_000 },
@@ -121,265 +37,17 @@
 		{ label: '10 minutes', value: 600_000 }
 	] as const;
 
-	const themePalette = ['#ff7f50', '#53d2dc', '#f7a437', '#8ddf77', '#f67dc0', '#8ea4ff', '#ffd166'];
-	const stopWords = new Set([
-		'a',
-		'an',
-		'the',
-		'and',
-		'or',
-		'but',
-		'if',
-		'then',
-		'else',
-		'when',
-		'where',
-		'who',
-		'whom',
-		'whose',
-		'which',
-		'what',
-		'why',
-		'how',
-		'did',
-		'does',
-		'do',
-		'done',
-		'is',
-		'are',
-		'was',
-		'were',
-		'be',
-		'been',
-		'being',
-		'am',
-		'to',
-		'of',
-		'in',
-		'on',
-		'at',
-		'by',
-		'as',
-		'it',
-		'its',
-		'they',
-		'them',
-		'their',
-		'you',
-		'your',
-		'we',
-		'our',
-		'he',
-		'she',
-		'him',
-		'her',
-		'i',
-		'me',
-		'my',
-		'for',
-		'with',
-		'from',
-		'that',
-		'this',
-		'these',
-		'those',
-		'into',
-		'over',
-		'under',
-		'after',
-		'before',
-		'against',
-		'near',
-		'out',
-		'up',
-		'down',
-		'not',
-		'no',
-		'yes',
-		'has',
-		'have',
-		'had',
-		'will',
-		'would',
-		'can',
-		'could',
-		'should',
-		'may',
-		'might',
-		'must',
-		'about',
-		'across',
-		'via',
-		'news',
-		'market',
-		'markets',
-		'update',
-		'says',
-		'said',
-		'report',
-		'reported',
-		'bloomberg',
-		'coindesk',
-	]);
-
-	const tokenize = (value: string | null | undefined): string[] => {
-		if (!value) {
-			return [];
-		}
-
-		return value
-			.toLowerCase()
-			.replace(/[^a-z0-9\s]/g, ' ')
-			.split(/\s+/)
-			.filter((word) => word.length >= 3 && !stopWords.has(word));
-	};
-
-	const colorForTheme = (theme: string) => {
-		let hash = 0;
-		for (let i = 0; i < theme.length; i += 1) {
-			hash = (hash * 31 + theme.charCodeAt(i)) >>> 0;
-		}
-
-		return themePalette[hash % themePalette.length];
-	};
-	const isOilAssetTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.includes('asset(oil)') || (normalized.includes('asset') && normalized.includes('oil'));
-	};
-	const isCurrencyAssetTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.includes('asset(currency)') || (normalized.includes('asset') && normalized.includes('currency'));
-	};
-	const isDevelopedStocksTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.includes('asset(developed market stocks)');
-	};
-	const isEmergingStocksTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.includes('asset(emerging market stocks)');
-	};
-	const isRealEstateTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.includes('asset(real estate)');
-	};
-	const isPolicyTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.startsWith('policy') || normalized.includes('policy(');
-	};
-	const isBondTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.includes('asset(bond)') || (normalized.includes('asset') && normalized.includes('bond'));
-	};
-	const isCommodityTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.includes('asset(commodity)') || (normalized.includes('asset') && normalized.includes('commodity'));
-	};
-	const isEventsTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.startsWith('events') || normalized.includes('events(') || normalized.includes('event(');
-	};
-	const isGoldTheme = (themeLabel: string) => {
-		const normalized = themeLabel.toLowerCase();
-		return normalized.includes('asset(gold)') || (normalized.includes('asset') && normalized.includes('gold'));
-	};
-	const CURRENCY_GREEN = '#38b26d';
-	const DEVELOPED_STOCKS_BLUE = '#4d96ff';
-	const EMERGING_STOCKS_ORANGE = '#f29f38';
-
-	const fetchNews = async () => {
-		loading = true;
-		error = '';
-
-		try {
-			const requestUrl = new URL('/api/news', window.location.origin);
-			if (windowStartMs !== null) {
-				requestUrl.searchParams.set('start', new Date(windowStartMs).toISOString());
-			}
-			if (windowEndMs !== null) {
-				requestUrl.searchParams.set('end', new Date(windowEndMs).toISOString());
-			}
-
-			const response = await fetch(requestUrl.toString());
-			if (!response.ok) {
-				throw new Error(`Failed to poll news feed: ${response.status}`);
-			}
-
-			const payload = (await response.json()) as NewsPayload;
-			if (payload.error) {
-				throw new Error(payload.error);
-			}
-
-			feed = payload.items;
-			lastPolledAt = payload.polled_at;
-			totalItems = payload.total_items;
-			minPublishedIso = payload.min_published_time;
-
-			if (payload.window_start) {
-				windowStartMs = new Date(payload.window_start).getTime();
-			}
-			if (payload.window_end) {
-				windowEndMs = new Date(payload.window_end).getTime();
-			}
-
-			if (selectedNewsId !== null && !payload.items.some((item) => item.id === selectedNewsId)) {
-				selectedNewsId = null;
-			}
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Unknown poll error';
-		} finally {
-			loading = false;
-		}
-	};
-
-	const resetPollingTimer = () => {
-		if (intervalId !== null) {
-			window.clearInterval(intervalId);
-		}
-
-		intervalId = null;
-		if (selectedMarkerId) {
-			return;
-		}
-
-		intervalId = window.setInterval(() => {
-			void fetchNews();
-		}, pollingMs);
-	};
-
 	const onPollingChange = (event: Event) => {
-		const nextValue = Number((event.currentTarget as HTMLSelectElement).value);
-		if (!Number.isNaN(nextValue)) {
-			pollingMs = nextValue;
-			resetPollingTimer();
-		}
+		newsFeedState.setPollingMsFromEvent(event);
 	};
 
 	const onTimeWindowChange = (nextStart: number) => {
-		if (minPublishedIso === null || !lastPolledAt) {
-			return;
-		}
-
-		const minMs = new Date(minPublishedIso).getTime();
-		const maxMs = new Date(lastPolledAt).getTime();
-		const windowMs = Math.min(MAX_WINDOW_MS, Math.max(0, maxMs - minMs));
-		const latestStart = Math.max(minMs, maxMs - windowMs);
-		const boundedStart = Math.min(Math.max(nextStart, minMs), latestStart);
-		const boundedEnd = boundedStart + windowMs;
-
-		windowEndMs = boundedEnd;
-		windowStartMs = boundedStart;
-		void fetchNews();
+		newsFeedState.updateTimeWindowStart(nextStart);
 	};
 
 	onMount(() => {
-		void fetchNews();
-		resetPollingTimer();
-
-		return () => {
-			if (intervalId !== null) {
-				window.clearInterval(intervalId);
-			}
-		};
+		newsFeedState.start();
+		return () => newsFeedState.stop();
 	});
 
 	const formatTime = (isoDate: string) => {
@@ -391,22 +59,6 @@
 			month: 'short',
 			day: '2-digit'
 		}).format(date);
-	};
-
-	const formatLocation = (city: string | null, country: string | null) => {
-		if (city && country) {
-			return `${city}, ${country}`;
-		}
-
-		if (city) {
-			return city;
-		}
-
-		if (country) {
-			return country;
-		}
-
-		return 'Location unavailable';
 	};
 
 	const formatLocationsForCard = (cities: NewsCity[]) => {
@@ -430,166 +82,33 @@
 		return uniqueTypes.join(', ');
 	};
 
-	const describeThemeMix = (marker: MapMarker) => {
-		const parts = marker.segments
-			.slice(0, 4)
-			.map((segment) => `${segment.label}: ${segment.weight}`)
-			.join(' | ');
-		return parts.length > 0 ? `Theme mix: ${parts}` : 'Theme mix: n/a';
-	};
-
-	const getNumericCoords = (city: NewsCity): { lat: number; lon: number } | null => {
-		if (city.latitude === null || city.longitude === null) {
-			return null;
-		}
-
-		const lat = Number(city.latitude);
-		const lon = Number(city.longitude);
-		if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-			return null;
-		}
-
-		return { lat, lon };
-	};
-
-	const markerKeyForCity = (city: NewsCity): string | null => {
-		const coords = getNumericCoords(city);
-		if (!coords) {
-			return null;
-		}
-
-		return city.city_id || `${coords.lat.toFixed(4)}:${coords.lon.toFixed(4)}`;
-	};
-
-const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
-	const coords = item.cities
-		.map((city) => {
-			const numeric = getNumericCoords(city);
-			return numeric ? { latitude: numeric.lat, longitude: numeric.lon } : null;
-		})
-		.filter((entry): entry is { latitude: number; longitude: number } => entry !== null);
-
-	if (coords.length === 0) {
-		return null;
-	}
-
-	if (coords.length === 1) {
-		return {
-			mode: 'point',
-			latitude: coords[0].latitude,
-			longitude: coords[0].longitude
-		};
-	}
-
-	return {
-		mode: 'bounds',
-		coordinates: coords
-	};
-};
-
-	const buildMapMarkers = (items: NewsCard[]): MapMarker[] => {
-		const grouped = new Map<
-			string,
-			{
-				cityId: string;
-				latitude: number;
-				longitude: number;
-				location: string;
-				total: number;
-				themes: Map<string, number>;
-				words: Map<string, number>;
-				articleIds: string[];
-				latestTime: string;
-			}
-		>();
-
-		for (const item of items) {
-			for (const city of item.cities) {
-				const key = markerKeyForCity(city);
-				if (!key) {
-					continue;
-				}
-
-				const coords = getNumericCoords(city);
-				if (!coords) {
-					continue;
-				}
-
-				const current = grouped.get(key);
-				const theme = item.keyword_theme_upper.trim() || 'UNKNOWN';
-				const itemId = String(item.id);
-
-				if (!current) {
-					const themeMap = new Map<string, number>();
-					const wordMap = new Map<string, number>();
-					themeMap.set(theme, 1);
-					for (const word of tokenize(item.summary)) {
-						wordMap.set(word, (wordMap.get(word) ?? 0) + 1);
-					}
-					for (const word of tokenize(item.source_title)) {
-						wordMap.set(word, (wordMap.get(word) ?? 0) + 1);
-					}
-					grouped.set(key, {
-						cityId: city.city_id,
-						latitude: coords.lat,
-						longitude: coords.lon,
-						location: formatLocation(city.city, city.country),
-						total: 1,
-						themes: themeMap,
-						words: wordMap,
-						articleIds: [itemId],
-						latestTime: item.time_published
-					});
-					continue;
-				}
-
-				current.total += 1;
-				current.latestTime = item.time_published > current.latestTime ? item.time_published : current.latestTime;
-				current.themes.set(theme, (current.themes.get(theme) ?? 0) + 1);
-				for (const word of tokenize(item.summary)) {
-					current.words.set(word, (current.words.get(word) ?? 0) + 1);
-				}
-				for (const word of tokenize(item.source_title)) {
-					current.words.set(word, (current.words.get(word) ?? 0) + 1);
-				}
-				if (!current.articleIds.includes(itemId)) {
-					current.articleIds.push(itemId);
-				}
-			}
-		}
-
-		return [...grouped.entries()]
-			.map(([key, group]) => {
-				const segments = [...group.themes.entries()]
-					.sort((a, b) => b[1] - a[1])
-					.map(([theme, weight]) => ({
-						label: theme,
-						weight,
-						color: colorForTheme(theme)
-					}));
-
-				const wordCloud = [...group.words.entries()]
-					.sort((a, b) => b[1] - a[1])
-					.slice(0, 12)
-					.map(([word, weight]) => ({ word, weight }));
-
-				return {
-					id: key,
-					cityId: group.cityId,
-					latitude: group.latitude,
-					longitude: group.longitude,
-					title: group.location,
-					detail: `${group.total} article(s) - ${formatTime(group.latestTime)} - ${group.latitude.toFixed(4)}, ${group.longitude.toFixed(4)}`,
-					total: group.total,
-					segments,
-					wordCloud,
-					articleIds: group.articleIds
-				};
+	const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
+		const coords = item.cities
+			.map((city) => {
+				const numeric = getNumericCoords(city);
+				return numeric ? { latitude: numeric.lat, longitude: numeric.lon } : null;
 			})
-			.sort((a, b) => b.total - a.total);
+			.filter((entry): entry is { latitude: number; longitude: number } => entry !== null);
+
+		if (coords.length === 0) {
+			return null;
+		}
+
+		if (coords.length === 1) {
+			return {
+				mode: 'point',
+				latitude: coords[0].latitude,
+				longitude: coords[0].longitude
+			};
+		}
+
+		return {
+			mode: 'bounds',
+			coordinates: coords
+		};
 	};
 
-	const mapMarkers = $derived.by(() => buildMapMarkers(feed));
+	const mapMarkers = $derived.by(() => buildMapMarkers(newsFeedState.feed, { formatTimeLabel: formatTime }));
 	const markerThemeLegend = $derived.by(() => {
 		const legendMap = new Map<string, string>();
 		for (const marker of mapMarkers) {
@@ -626,21 +145,23 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 	});
 
 	const filteredFeed = $derived.by(() => {
-		if (!selectedMarkerId) {
-			return feed;
+		if (!newsFeedState.selectedMarkerId) {
+			return newsFeedState.feed;
 		}
 
-		const activeMarker = mapMarkers.find((marker) => marker.id === selectedMarkerId);
+		const activeMarker = mapMarkers.find((marker) => marker.id === newsFeedState.selectedMarkerId);
 		if (!activeMarker) {
-			return feed;
+			return newsFeedState.feed;
 		}
 
 		const idSet = new Set(activeMarker.articleIds);
-		return feed.filter((item) => idSet.has(String(item.id)));
+		return newsFeedState.feed.filter((item) => idSet.has(String(item.id)));
 	});
 
 	const selectedNews = $derived.by(() =>
-		selectedNewsId === null ? null : feed.find((item) => item.id === selectedNewsId) ?? null
+		newsFeedState.selectedNewsId === null
+			? null
+			: newsFeedState.feed.find((item) => item.id === newsFeedState.selectedNewsId) ?? null
 	);
 
 	const selectedNewsRelationship = $derived.by<GlobeRelationshipOverlay | null>(() => {
@@ -727,16 +248,16 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		};
 	});
 
-	const totalFeedPages = $derived.by(() => Math.max(1, Math.ceil(filteredFeed.length / FEED_PAGE_SIZE)));
+	const totalFeedPages = $derived.by(() => Math.max(1, Math.ceil(filteredFeed.length / newsFeedState.feedPageSize)));
 	const pagedFeed = $derived.by(() => {
-		const start = (feedPage - 1) * FEED_PAGE_SIZE;
-		return filteredFeed.slice(start, start + FEED_PAGE_SIZE);
+		const start = (newsFeedState.feedPage - 1) * newsFeedState.feedPageSize;
+		return filteredFeed.slice(start, start + newsFeedState.feedPageSize);
 	});
 	const topBannerItems = $derived.by(() => {
-		if (feed.length === 0) {
+		if (newsFeedState.feed.length === 0) {
 			return ['Waiting for live market news feed...'];
 		}
-		return feed.slice(0, 12).map((item) => {
+		return newsFeedState.feed.slice(0, 12).map((item) => {
 			const location = formatLocationsForCard(item.cities);
 			return `${formatTime(item.time_published)} - ${item.source}: ${item.source_title} (${location})`;
 		});
@@ -752,59 +273,38 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 	});
 
 	$effect(() => {
-		const maxPage = totalFeedPages;
-		if (feedPage > maxPage) {
-			feedPage = maxPage;
-		}
-		if (feedPage < 1) {
-			feedPage = 1;
-		}
+		newsFeedState.clampFeedPage(totalFeedPages);
 	});
 
 	$effect(() => {
 		void filteredFeed.length;
-		feedPage = 1;
+		newsFeedState.resetFeedPage();
 	});
 
-	const selectedMarker = $derived(mapMarkers.find((marker) => marker.id === selectedMarkerId) ?? null);
+	const selectedMarker = $derived(mapMarkers.find((marker) => marker.id === newsFeedState.selectedMarkerId) ?? null);
 
 	const onMarkerOpen = (markerId: string) => {
-		selectedMarkerId = markerId;
-		resetPollingTimer();
+		newsFeedState.setSelectedMarkerId(markerId);
 	};
 
 	const onMarkerClose = () => {
-		selectedMarkerId = null;
-		resetPollingTimer();
+		newsFeedState.setSelectedMarkerId(null);
 	};
 
 	const clearMarkerFilter = () => {
-		selectedMarkerId = null;
-		resetPollingTimer();
+		newsFeedState.setSelectedMarkerId(null);
 	};
 
 	const toggleNewsSelection = (newsId: number) => {
-		if (selectedNewsId === newsId) {
-			selectedNewsId = null;
-			newsFocusTarget = null;
-			return;
-		}
-
-		selectedNewsId = newsId;
-		const selectedItem = feed.find((item) => item.id === newsId);
-		newsFocusTarget = selectedItem ? focusTargetForNews(selectedItem) : null;
+		newsFeedState.toggleNewsSelection(newsId, focusTargetForNews);
 	};
 
 	const gotoPrevFeedPage = () => {
-		if (feedPage > 1) {
-			feedPage -= 1;
-		}
+		newsFeedState.gotoPrevFeedPage();
 	};
 
 	const gotoNextFeedPage = () => {
-		if (feedPage < totalFeedPages) {
-			feedPage += 1;
-		}
+		newsFeedState.gotoNextFeedPage(totalFeedPages);
 	};
 
 </script>
@@ -812,26 +312,14 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 <section class="map-scene">
 	<OpenWorldGlobe
 		markers={mapMarkers}
-		selectedMarkerId={selectedMarkerId}
+		selectedMarkerId={newsFeedState.selectedMarkerId}
 		newsRelationshipOverlay={selectedNewsRelationship}
-		newsFocusTarget={newsFocusTarget}
+		newsFocusTarget={newsFeedState.newsFocusTarget}
 		onMarkerOpen={onMarkerOpen}
 		onMarkerClose={onMarkerClose}
 	/>
-	<div class="globe-banner globe-banner-top" aria-label="Live news ticker">
-		<div class="globe-banner-track">
-			{#each [...topBannerItems, ...topBannerItems] as item, index (`top-${index}-${item}`)}
-				<span class="globe-banner-item">{item}</span>
-			{/each}
-		</div>
-	</div>
-	<div class="globe-banner globe-banner-bottom" aria-label="Area summary ticker">
-		<div class="globe-banner-track">
-			{#each [...bottomBannerItems, ...bottomBannerItems] as item, index (`bottom-${index}-${item}`)}
-				<span class="globe-banner-item">{item}</span>
-			{/each}
-		</div>
-	</div>
+	<MapTicker items={topBannerItems} position="top" ariaLabel="Live news ticker" />
+	<MapTicker items={bottomBannerItems} position="bottom" ariaLabel="Area summary ticker" />
 
 	<div class="overlay-grid">
 		<div class="sidebar-stack">
@@ -841,219 +329,42 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 				<p>Showing geolocated market-related news ordered by published time. Time window supports up to 48 hours.</p>
 			</section>
 
-			<section class="news-overlay">
-				<div class="panel-heading-row">
-					<div class="panel-heading">
-						<h2>Live News Feed</h2>
-						<p>{loading ? 'Polling...' : `Last polled: ${lastPolledAt ? formatTime(lastPolledAt) : 'n/a'}`}</p>
-					</div>
-					<div class="feed-pagination">
-						<button type="button" onclick={gotoPrevFeedPage} disabled={feedPage <= 1} aria-label="Previous feed page">
-							Prev
-						</button>
-						<span>{feedPage}/{totalFeedPages}</span>
-						<button
-							type="button"
-							onclick={gotoNextFeedPage}
-							disabled={feedPage >= totalFeedPages}
-							aria-label="Next feed page"
-						>
-							Next
-						</button>
-					</div>
-				</div>
-
-				<div class="controls-row">
-					<div class="controls polling-control">
-						<label for="polling-select">Auto polling</label>
-						<select id="polling-select" value={pollingMs} onchange={onPollingChange}>
-							{#each pollingOptions as option}
-								<option value={option.value}>{option.label}</option>
-							{/each}
-						</select>
-					</div>
-					<p class="map-debug">{mapMarkers.length} markers | {feed.length} rows | {totalItems} total</p>
-				</div>
-
-				<PublishedTimeSlider
-					minMs={minPublishedIso ? new Date(minPublishedIso).getTime() : null}
-					maxMs={lastPolledAt ? new Date(lastPolledAt).getTime() : null}
-					startMs={windowStartMs}
-					maxWindowMs={MAX_WINDOW_MS}
-					onChangeStart={onTimeWindowChange}
-					disabled={loading}
-				/>
-
-				{#if selectedMarker}
-					<div class="active-filter">
-						<span>Filtered by area: {selectedMarker.title} ({selectedMarker.total} articles)</span>
-						<button type="button" onclick={clearMarkerFilter}>Clear filter</button>
-					</div>
-				{:else}
-					<p class="muted filter-hint">Select a globe marker to filter the feed.</p>
-				{/if}
-
-				{#if error}
-					<p class="error">{error}</p>
-				{:else if filteredFeed.length === 0}
-					<p class="muted">No cards for the selected published-time range.</p>
-				{:else}
-					<div class="cards">
-						{#each pagedFeed as item}
-							<NewsFeedCard
-								source={item.source}
-								title={item.source_title}
-								summary={item.summary}
-								timeLabel={formatTime(item.time_published)}
-								link={item.source_link}
-								locationLabel={formatLocationsForCard(item.cities)}
-								themeUpperLabel={item.keyword_theme_upper}
-								themeLowerLabel={item.keyword_theme_lower}
-								geoRelationshipLabel={summarizeRelationship(item)}
-								selected={selectedNewsId === item.id}
-								onSelect={() => toggleNewsSelection(item.id)}
-							/>
-						{/each}
-					</div>
-				{/if}
-			</section>
+			<FeedOverlayPanel
+				loading={newsFeedState.loading}
+				lastPolledAt={newsFeedState.lastPolledAt}
+				{formatTime}
+				feedPage={newsFeedState.feedPage}
+				{totalFeedPages}
+				onPrevPage={gotoPrevFeedPage}
+				onNextPage={gotoNextFeedPage}
+				pollingMs={newsFeedState.pollingMs}
+				pollingOptions={[...pollingOptions]}
+				onPollingChange={onPollingChange}
+				mapMarkerCount={mapMarkers.length}
+				feedRowCount={newsFeedState.feed.length}
+				totalItems={newsFeedState.totalItems}
+				minMs={newsFeedState.minPublishedIso ? new Date(newsFeedState.minPublishedIso).getTime() : null}
+				maxMs={newsFeedState.lastPolledAt ? new Date(newsFeedState.lastPolledAt).getTime() : null}
+				startMs={newsFeedState.windowStartMs}
+				maxWindowMs={MAX_WINDOW_MS}
+				onTimeWindowChange={onTimeWindowChange}
+				{selectedMarker}
+				onClearMarkerFilter={clearMarkerFilter}
+				error={newsFeedState.error}
+				filteredFeedLength={filteredFeed.length}
+				{pagedFeed}
+				selectedNewsId={newsFeedState.selectedNewsId}
+				{formatLocationsForCard}
+				{summarizeRelationship}
+				onToggleNewsSelection={toggleNewsSelection}
+			/>
 
 			{#if selectedMarker}
-				<section class="area-overlay">
-					<div class="panel-heading">
-						<h2>{selectedMarker.title}</h2>
-						<p>Selected area context and keyword cloud.</p>
-					</div>
-					<p class="area-detail">{selectedMarker.detail}</p>
-					<p class="area-theme">{describeThemeMix(selectedMarker)}</p>
-					<AreaWordCloud words={selectedMarker.wordCloud} emptyLabel="No summary terms for this area." />
-				</section>
+				<AreaContextPanel marker={selectedMarker} />
 			{/if}
 		</div>
 	</div>
-	{#if markerThemeLegend.length > 0}
-		<section class="map-legend" aria-label="Map marker legend">
-			<p class="map-legend-title">Color legend</p>
-			<div class="map-legend-list">
-				{#each markerThemeLegend as item}
-					<div class="map-legend-item">
-						{#if item.isOil}
-							<svg
-								class="map-legend-oil-icon"
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 -960 960 960"
-								aria-hidden="true"
-							>
-								<path
-									fill={item.color}
-									d="M160-120q-17 0-28.5-11.5T120-160q0-17 11.5-28.5T160-200h40v-240h-40q-17 0-28.5-11.5T120-480q0-17 11.5-28.5T160-520h40v-240h-40q-17 0-28.5-11.5T120-800q0-17 11.5-28.5T160-840h640q17 0 28.5 11.5T840-800q0 17-11.5 28.5T800-760h-40v240h40q17 0 28.5 11.5T840-480q0 17-11.5 28.5T800-440h-40v240h40q17 0 28.5 11.5T840-160q0 17-11.5 28.5T800-120H160Zm120-80h400v-240q-17 0-28.5-11.5T640-480q0-17 11.5-28.5T680-520v-240H280v240q17 0 28.5 11.5T320-480q0 17-11.5 28.5T280-440v240Zm285-154.5q35-34.5 35-83.5 0-39-22.5-67T480-620q-75 86-97.5 114.5T360-438q0 49 35 83.5t85 34.5q50 0 85-34.5ZM280-200v-560 560Z"
-								/>
-							</svg>
-						{:else if item.isCurrency}
-							<svg
-								class="map-legend-currency-icon"
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 -960 960 960"
-								aria-hidden="true"
-							>
-								<path
-									fill={item.color}
-									d="M600-320h160v-160h-60v100H600v60Zm-120-40q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM200-480h60v-100h100v-60H200v160ZM80-200v-560h800v560H80Zm80-80h640v-400H160v400Zm0 0v-400 400Z"
-								/>
-							</svg>
-						{:else if item.isDevelopedStocks || item.isEmergingStocks}
-							<svg
-								class="map-legend-stocks-icon"
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 -960 960 960"
-								aria-hidden="true"
-							>
-								<path
-									fill={item.color}
-									d="M200-280v-280h80v280h-80Zm240 0v-280h80v280h-80ZM80-120v-80h800v80H80Zm600-160v-280h80v280h-80ZM80-640v-80l400-200 400 200v80H80Zm178-80h444-444Zm0 0h444L480-830 258-720Z"
-								/>
-							</svg>
-						{:else if item.isRealEstate}
-							<svg
-								class="map-legend-real-estate-icon"
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 -960 960 960"
-								aria-hidden="true"
-							>
-								<path
-									fill={item.color}
-									d="M120-120v-560h160v-160h400v320h160v400H520v-160h-80v160H120Zm80-80h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 320h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 480h80v-80h-80v80Zm0-160h80v-80h-80v80Z"
-								/>
-							</svg>
-						{:else if item.isPolicy}
-							<svg
-								class="map-legend-policy-icon"
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 -960 960 960"
-								aria-hidden="true"
-							>
-								<path
-									fill={item.color}
-									d="M160-120v-80h480v80H160Zm226-194L160-540l84-86 228 226-86 86Zm254-254L414-796l86-84 226 226-86 86Zm184 408L302-682l56-56 522 522-56 56Z"
-								/>
-							</svg>
-						{:else if item.isBond}
-							<svg
-								class="map-legend-bond-icon"
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 -960 960 960"
-								aria-hidden="true"
-							>
-								<path
-									fill={item.color}
-									d="M336-120q-91 0-153.5-62.5T120-336q0-38 13-74t37-65l142-171-97-194h530l-97 194 142 171q24 29 37 65t13 74q0 91-63 153.5T624-120H336Zm144-200q-33 0-56.5-23.5T400-400q0-33 23.5-56.5T480-480q33 0 56.5 23.5T560-400q0 33-23.5 56.5T480-320Zm-95-360h190l40-80H345l40 80Zm-49 480h288q57 0 96.5-39.5T760-336q0-24-8.5-46.5T728-423L581-600H380L232-424q-15 18-23.5 41t-8.5 47q0 57 39.5 96.5T336-200Z"
-								/>
-							</svg>
-						{:else if item.isCommodity}
-							<svg
-								class="map-legend-commodity-icon"
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 -960 960 960"
-								aria-hidden="true"
-							>
-								<path
-									fill={item.color}
-									d="M480-120 80-600l120-240h560l120 240-400 480Zm-95-520h190l-60-120h-70l-60 120Zm55 347v-267H218l222 267Zm80 0 222-267H520v267Zm144-347h106l-60-120H604l60 120Zm-474 0h106l60-120H250l-60 120Z"
-								/>
-							</svg>
-						{:else if item.isEvents}
-							<svg
-								class="map-legend-events-icon"
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 -960 960 960"
-								aria-hidden="true"
-							>
-								<path
-									fill={item.color}
-									d="m480-281 59-59h81v-81l59-59-59-59v-81h-81l-59-59-59 59h-81v81l-59 59 59 59v81h81l59 59Zm0 253L346-160H160v-186L28-480l132-134v-186h186l134-132 134 132h186v186l132 134-132 134v186H614L480-28Zm0-112 100-100h140v-140l100-100-100-100v-140H580L480-820 380-720H240v140L140-480l100 100v140h140l100 100Zm0-340Z"
-								/>
-							</svg>
-						{:else if item.isGold}
-							<svg
-								class="map-legend-gold-icon"
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 -960 960 960"
-								aria-hidden="true"
-							>
-								<path
-									fill={item.color}
-									d="M852-212 732-332l56-56 120 120-56 56ZM708-692l-56-56 120-120 56 56-120 120Zm-456 0L132-812l56-56 120 120-56 56ZM108-212l-56-56 120-120 56 56-120 120Zm246-75 126-76 126 77-33-144 111-96-146-13-58-136-58 135-146 13 111 97-33 143ZM233-120l65-281L80-590l288-25 112-265 112 265 288 25-218 189 65 281-247-149-247 149Zm247-361Z"
-								/>
-							</svg>
-						{:else}
-							<span class="map-legend-color" style={`background-color:${item.color}`} aria-hidden="true"></span>
-						{/if}
-						<span class="map-legend-label">{item.label}</span>
-					</div>
-				{/each}
-			</div>
-		</section>
-	{/if}
+	<MapLegend items={markerThemeLegend} />
 </section>
 
 <style>
@@ -1080,96 +391,6 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		box-sizing: border-box;
 	}
 
-	.map-legend {
-		position: absolute;
-		left: 1rem;
-		bottom: calc(var(--globe-banner-offset) + var(--globe-banner-safe-bottom));
-		z-index: 520;
-		padding: 0.52rem 0.62rem;
-		border-radius: 0.56rem;
-		border: 1px solid #2f4254;
-		background: linear-gradient(160deg, #0b121bcf, #132130b8);
-		backdrop-filter: blur(10px);
-		box-shadow: 0 10px 26px #01060d88;
-		pointer-events: none;
-		max-width: min(21rem, 42vw);
-	}
-
-	.map-legend-title {
-		margin: 0 0 0.34rem;
-		font: 600 0.68rem/1 'IBM Plex Mono', monospace;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: #dce7f4;
-	}
-
-	.map-legend-list {
-		display: grid;
-		gap: 0.26rem;
-	}
-
-	.map-legend-item {
-		display: flex;
-		align-items: center;
-		gap: 0.45rem;
-		min-width: 0;
-	}
-
-	.map-legend-color {
-		width: 0.64rem;
-		height: 0.64rem;
-		border-radius: 999px;
-		flex: 0 0 auto;
-		border: 1px solid #ffffff3d;
-	}
-
-	.map-legend-oil-icon {
-		width: 0.9rem;
-		height: 0.9rem;
-		flex: 0 0 auto;
-	}
-
-	.map-legend-currency-icon {
-		width: 0.9rem;
-		height: 0.9rem;
-		flex: 0 0 auto;
-	}
-
-	.map-legend-stocks-icon {
-		width: 0.9rem;
-		height: 0.9rem;
-		flex: 0 0 auto;
-	}
-
-	.map-legend-real-estate-icon {
-		width: 0.9rem;
-		height: 0.9rem;
-		flex: 0 0 auto;
-	}
-
-	.map-legend-policy-icon {
-		width: 0.9rem;
-		height: 0.9rem;
-		flex: 0 0 auto;
-	}
-
-	.map-legend-bond-icon,
-	.map-legend-commodity-icon,
-	.map-legend-events-icon,
-	.map-legend-gold-icon {
-		width: 0.9rem;
-		height: 0.9rem;
-		flex: 0 0 auto;
-	}
-
-	.map-legend-label {
-		font: 500 0.72rem/1.2 'IBM Plex Sans', sans-serif;
-		color: #cfddea;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
 	.sidebar-stack {
 		pointer-events: none;
 		display: flex;
@@ -1181,71 +402,7 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		overflow: hidden;
 	}
 
-	.globe-banner {
-		position: absolute;
-		left: 1rem;
-		right: 1rem;
-		z-index: 515;
-		overflow: hidden;
-		border: 1px solid #2f4254;
-		border-radius: 0.56rem;
-		background: linear-gradient(160deg, #0b121bcf, #132130b8);
-		backdrop-filter: blur(10px);
-		box-shadow: 0 10px 26px #01060d88;
-		pointer-events: auto;
-	}
-
-	.globe-banner-top {
-		top: var(--globe-banner-offset);
-	}
-
-	.globe-banner-bottom {
-		bottom: var(--globe-banner-offset);
-	}
-
-	.globe-banner-track {
-		display: inline-flex;
-		align-items: center;
-		gap: 0;
-		white-space: nowrap;
-		width: max-content;
-		min-width: 100%;
-		animation: globe-banner-scroll 90s linear infinite;
-		will-change: transform;
-	}
-
-	.globe-banner:hover .globe-banner-track {
-		animation-play-state: paused;
-	}
-
-	.globe-banner-item {
-		position: relative;
-		display: inline-flex;
-		align-items: center;
-		padding: 0.45rem 1.05rem;
-		font: 500 0.72rem/1 'IBM Plex Sans', sans-serif;
-		color: #dce7f4;
-	}
-
-	.globe-banner-item::after {
-		content: '•';
-		position: absolute;
-		right: 0;
-		color: #8ea2b7;
-	}
-
-	@keyframes globe-banner-scroll {
-		from {
-			transform: translateX(0);
-		}
-		to {
-			transform: translateX(-50%);
-		}
-	}
-
-	.title-overlay,
-	.news-overlay,
-	.area-overlay {
+	.title-overlay {
 		pointer-events: auto;
 		border: 1px solid #f3f6fb1f;
 		backdrop-filter: blur(14px);
@@ -1280,183 +437,6 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		line-height: 1.35;
 	}
 
-	.news-overlay {
-		display: flex;
-		flex-direction: column;
-		justify-content: flex-start;
-		align-items: stretch;
-		padding: 0.8rem;
-		min-height: 0;
-		min-width: 0;
-		max-height: min(75vh, 49rem);
-		overflow: hidden;
-	}
-
-	.area-overlay {
-		padding: 0.7rem 0.75rem;
-	}
-
-	.panel-heading-row {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 0.6rem;
-		min-width: 0;
-		flex-shrink: 0;
-	}
-
-	.panel-heading h2 {
-		margin: 0;
-		font: 600 0.95rem/1.2 'IBM Plex Sans', sans-serif;
-		color: #f6fbff;
-	}
-
-	.panel-heading p {
-		margin: 0.24rem 0 0.55rem;
-		font: 500 0.72rem/1 'IBM Plex Mono', monospace;
-		color: #ffcc7f;
-	}
-
-	.feed-pagination {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.35rem;
-		font: 600 0.72rem/1 'IBM Plex Mono', monospace;
-		color: #c6d0dc;
-	}
-
-	.feed-pagination button {
-		padding: 0.26rem 0.48rem;
-		border-radius: 0.36rem;
-		border: 1px solid #3f4b5b;
-		background: #142030;
-		color: #dbe9f8;
-		cursor: pointer;
-	}
-
-	.feed-pagination button:disabled {
-		opacity: 0.45;
-		cursor: default;
-	}
-
-	.cards {
-		display: grid;
-		gap: 0.6rem;
-		overflow: auto;
-		min-height: 0;
-		min-width: 0;
-		scrollbar-width: none;
-		-ms-overflow-style: none;
-	}
-
-	.cards::-webkit-scrollbar {
-		width: 0;
-		height: 0;
-	}
-
-	.cards :global(.news-card) {
-		background: #111824ef;
-		border-color: #364353;
-		min-width: 0;
-	}
-
-	.controls {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.polling-control {
-		padding: 0.28rem 0.42rem;
-		border: 1px solid #2d3f53;
-		border-radius: 0.42rem;
-		background: #101924e8;
-	}
-
-	.controls-row {
-		display: flex;
-		justify-content: space-between;
-		gap: 0.8rem;
-		align-items: center;
-		margin-bottom: 0.7rem;
-		min-width: 0;
-		flex-shrink: 0;
-	}
-
-	.filter-hint {
-		margin-bottom: 0.75rem;
-		font-size: 0.76rem;
-	}
-
-	.controls label {
-		margin: 0;
-		font: 600 0.72rem/1 'IBM Plex Mono', monospace;
-		text-transform: lowercase;
-		color: #9db0c4;
-	}
-
-	.controls select {
-		height: 1.9rem;
-		padding: 0 0.5rem;
-		border-radius: 0.4rem;
-		border: 1px solid #355270;
-		background: #0e151f;
-		color: #e4edf7;
-		font: 600 0.74rem/1 'IBM Plex Mono', monospace;
-	}
-
-	.active-filter {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 0.6rem;
-		padding: 0.5rem 0.65rem;
-		margin-bottom: 0.75rem;
-		border: 1px solid #314355;
-		background: #121b24;
-		border-radius: 0.45rem;
-		font-size: 0.8rem;
-		color: #cdd5df;
-	}
-
-	.active-filter button {
-		padding: 0.3rem 0.55rem;
-		border-radius: 0.38rem;
-		border: 1px solid #37597a;
-		background: #162433;
-		color: #dbe9f8;
-		cursor: pointer;
-	}
-
-	.area-detail {
-		margin: 0.22rem 0 0;
-		font-size: 0.75rem;
-		color: #a7bfd7;
-	}
-
-	.area-theme {
-		margin: 0.2rem 0 0.45rem;
-		font-size: 0.74rem;
-		color: #ffcc7f;
-	}
-
-	.map-debug {
-		margin: 0;
-		font: 500 0.72rem/1 'IBM Plex Mono', monospace;
-		color: #8ea2b7;
-		white-space: nowrap;
-	}
-
-	.muted {
-		margin: 0;
-		color: #8f98a3;
-	}
-
-	.error {
-		margin: 0;
-		color: #ff7f7f;
-	}
-
 	@media (max-width: 1040px) {
 		.map-scene {
 			height: 100vh;
@@ -1466,13 +446,8 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 			width: min(35rem, 56vw);
 			max-height: min(96vh, 850px);
 		}
-
-		.news-overlay {
-			max-height: min(60vh, 37.2rem);
-		}
 	}
 
-	/* Keep desktop panel proportions stable across larger landscape monitors. */
 	@media (min-width: 1100px) and (min-height: 700px) and (orientation: landscape) {
 		.sidebar-stack {
 			width: 38rem;
@@ -1483,22 +458,6 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		.title-overlay {
 			flex: 0 0 auto;
 		}
-
-		.news-overlay {
-			flex: 1 1 auto;
-			max-height: none;
-			min-height: 0;
-		}
-
-		.sidebar-stack:has(.area-overlay) .news-overlay {
-			flex: 0 0 68%;
-		}
-
-		.area-overlay {
-			flex: 1 1 0;
-			min-height: 11rem;
-			overflow: hidden;
-		}
 	}
 
 	@media (max-width: 680px) {
@@ -1508,22 +467,6 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 			gap: 0.65rem;
 		}
 
-		.map-legend {
-			left: 0.75rem;
-			bottom: calc(var(--globe-banner-offset) + var(--globe-banner-safe-bottom));
-			max-width: min(16rem, 60vw);
-		}
-
-		.globe-banner {
-			left: 0.75rem;
-			right: 0.75rem;
-		}
-
-		.globe-banner-item {
-			font-size: 0.69rem;
-			padding: 0.42rem 0.86rem;
-		}
-
 		.title-overlay {
 			min-height: 0;
 		}
@@ -1531,24 +474,6 @@ const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
 		.sidebar-stack {
 			width: min(92vw, 34rem);
 			max-height: calc(100vh - 1.5rem);
-		}
-
-		.controls-row {
-			flex-direction: column;
-			align-items: flex-start;
-		}
-
-		.controls {
-			align-items: center;
-		}
-
-		.map-debug {
-			white-space: normal;
-		}
-
-		.active-filter {
-			flex-direction: column;
-			align-items: stretch;
 		}
 	}
 </style>
