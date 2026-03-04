@@ -26,6 +26,7 @@ export class NewsFeedState {
 	windowStartMs = $state<number | null>(null);
 	windowEndMs = $state<number | null>(null);
 	feedPage = $state(1);
+	isWindowPinned = $state(false);
 
 	readonly maxWindowMs: number;
 	readonly feedPageSize: number;
@@ -46,10 +47,10 @@ export class NewsFeedState {
 
 		try {
 			const requestUrl = new URL(this.endpointPath, window.location.origin);
-			if (this.windowStartMs !== null) {
+			if (this.isWindowPinned && this.windowStartMs !== null) {
 				requestUrl.searchParams.set('start', new Date(this.windowStartMs).toISOString());
 			}
-			if (this.windowEndMs !== null) {
+			if (this.isWindowPinned && this.windowEndMs !== null) {
 				requestUrl.searchParams.set('end', new Date(this.windowEndMs).toISOString());
 			}
 
@@ -69,11 +70,31 @@ export class NewsFeedState {
 			this.minPublishedIso = payload.min_published_time;
 			this.maxPublishedIso = payload.max_published_time;
 
-			if (payload.window_start) {
-				this.windowStartMs = new Date(payload.window_start).getTime();
-			}
-			if (payload.window_end) {
-				this.windowEndMs = new Date(payload.window_end).getTime();
+			const minBoundMs = payload.min_published_time ? new Date(payload.min_published_time).getTime() : null;
+			const maxBoundMs = payload.max_published_time ? new Date(payload.max_published_time).getTime() : null;
+			const payloadStartMs = payload.window_start ? new Date(payload.window_start).getTime() : null;
+			const payloadEndMs = payload.window_end ? new Date(payload.window_end).getTime() : null;
+
+			if (!this.isWindowPinned) {
+				if (maxBoundMs !== null) {
+					const startFloor = minBoundMs ?? maxBoundMs;
+					const liveWindowMs = Math.min(this.maxWindowMs, Math.max(0, maxBoundMs - startFloor));
+					this.windowEndMs = maxBoundMs;
+					this.windowStartMs = Math.max(startFloor, maxBoundMs - liveWindowMs);
+				} else if (payloadStartMs !== null && payloadEndMs !== null) {
+					this.windowStartMs = payloadStartMs;
+					this.windowEndMs = payloadEndMs;
+				}
+			} else if (minBoundMs !== null && maxBoundMs !== null) {
+				const currentStart = this.windowStartMs ?? payloadStartMs;
+				const currentEnd = this.windowEndMs ?? payloadEndMs;
+				if (currentStart !== null && currentEnd !== null) {
+					const windowMs = Math.min(this.maxWindowMs, Math.max(0, currentEnd - currentStart));
+					const latestStart = Math.max(minBoundMs, maxBoundMs - windowMs);
+					const boundedStart = Math.min(Math.max(currentStart, minBoundMs), latestStart);
+					this.windowStartMs = boundedStart;
+					this.windowEndMs = Math.min(maxBoundMs, boundedStart + windowMs);
+				}
 			}
 
 			if (this.selectedNewsId !== null && !payload.items.some((item) => item.id === this.selectedNewsId)) {
@@ -127,6 +148,7 @@ export class NewsFeedState {
 		const boundedStart = Math.min(Math.max(nextStart, minMs), latestStart);
 		const boundedEnd = boundedStart + windowMs;
 
+		this.isWindowPinned = true;
 		this.windowEndMs = boundedEnd;
 		this.windowStartMs = boundedStart;
 		void this.fetchNews();
@@ -134,6 +156,10 @@ export class NewsFeedState {
 
 	setSelectedMarkerId(markerId: string | null) {
 		this.selectedMarkerId = markerId;
+		if (markerId !== null) {
+			this.selectedNewsId = null;
+			this.newsFocusTarget = null;
+		}
 		this.resetPollingTimer();
 	}
 
@@ -145,6 +171,7 @@ export class NewsFeedState {
 		}
 
 		this.selectedNewsId = newsId;
+		this.selectedMarkerId = null;
 		const selectedItem = this.feed.find((item) => item.id === newsId);
 		this.newsFocusTarget = selectedItem ? focusResolver(selectedItem) : null;
 	}

@@ -15,13 +15,7 @@ type TimeBounds = {
 
 type RelationType = 'Assault' | 'Cooperate' | 'Independent';
 
-let cachedBounds: TimeBounds | null = null;
-
 const getPublishedBounds = async (): Promise<TimeBounds> => {
-	if (cachedBounds) {
-		return cachedBounds;
-	}
-
 	const [row] = await db
 		.select({
 			minPublished: min(factDistilledNews.timePublished),
@@ -29,12 +23,10 @@ const getPublishedBounds = async (): Promise<TimeBounds> => {
 		})
 		.from(factDistilledNews);
 
-	cachedBounds = {
+	return {
 		min: row?.minPublished ?? null,
 		max: row?.maxPublished ?? null
 	};
-
-	return cachedBounds;
 };
 
 const clampWindowToBounds = (requestedStart: Date, requestedEnd: Date, bounds: TimeBounds) => {
@@ -94,11 +86,6 @@ const parseRequestedWindow = (url: URL, bounds: TimeBounds) => {
 
 	return clampWindowToBounds(requestedStart, requestedEnd, bounds);
 };
-
-void getPublishedBounds().catch((error) => {
-	console.error('failed to preload published bounds', error);
-	cachedBounds = null;
-});
 
 export const GET: RequestHandler = async ({ url }) => {
 	try {

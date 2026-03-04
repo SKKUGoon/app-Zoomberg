@@ -2,15 +2,20 @@
 	let {
 		items,
 		position = 'top',
-		ariaLabel
+		ariaLabel,
+		inline = false
 	} = $props<{
 		items: string[];
 		position?: 'top' | 'bottom';
 		ariaLabel: string;
+		inline?: boolean;
 	}>();
 </script>
 
-<div class={`globe-banner ${position === 'top' ? 'globe-banner-top' : 'globe-banner-bottom'}`} aria-label={ariaLabel}>
+<div
+	class={`globe-banner ${position === 'top' ? 'globe-banner-top' : 'globe-banner-bottom'} ${inline ? 'globe-banner-inline' : ''}`}
+	aria-label={ariaLabel}
+>
 	<div class="globe-banner-track">
 		{#each [...items, ...items] as item, index (`${position}-${index}-${item}`)}
 			<span class="globe-banner-item">{item}</span>
@@ -39,6 +44,15 @@
 
 	.globe-banner-bottom {
 		bottom: var(--globe-banner-offset);
+	}
+
+	.globe-banner-inline {
+		position: relative;
+		left: auto;
+		right: auto;
+		top: auto;
+		bottom: auto;
+		width: 100%;
 	}
 
 	.globe-banner-track {

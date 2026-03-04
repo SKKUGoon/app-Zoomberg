@@ -31,6 +31,7 @@
 		onClearMarkerFilter,
 		error,
 		filteredFeedLength,
+		latestFeedItem,
 		pagedFeed,
 		selectedNewsId,
 		formatLocationsForCard,
@@ -59,99 +60,151 @@
 		onClearMarkerFilter: () => void;
 		error: string;
 		filteredFeedLength: number;
+		latestFeedItem: NewsCard | null;
 		pagedFeed: NewsCard[];
 		selectedNewsId: number | null;
 		formatLocationsForCard: (cities: NewsCity[]) => string;
 		summarizeRelationship: (item: NewsCard) => string | null;
 		onToggleNewsSelection: (newsId: number) => void;
 	}>();
+
+	let collapsed = $state(false);
 </script>
 
-<section class="news-overlay">
+<section class="news-overlay" class:collapsed>
 	<div class="panel-heading-row">
 		<div class="panel-heading">
-			<h2>Live News Feed</h2>
+			<div class="heading-title-row">
+				<button
+					type="button"
+					class="panel-collapse-toggle"
+					aria-expanded={!collapsed}
+					aria-label={collapsed ? 'Expand live news feed panel' : 'Collapse live news feed panel'}
+					onclick={() => {
+						collapsed = !collapsed;
+					}}
+				>
+					{collapsed ? '▸' : '▾'}
+				</button>
+				<h2>Live News Feed</h2>
+			</div>
 			<p>{loading ? 'Polling...' : `Last polled: ${lastPolledAt ? formatTime(lastPolledAt) : 'n/a'}`}</p>
 		</div>
-		<div class="feed-pagination">
-			<button type="button" onclick={onPrevPage} disabled={feedPage <= 1} aria-label="Previous feed page">Prev</button>
-			<span>{feedPage}/{totalFeedPages}</span>
-			<button type="button" onclick={onNextPage} disabled={feedPage >= totalFeedPages} aria-label="Next feed page">Next</button>
-		</div>
+		{#if !collapsed}
+			<div class="feed-pagination">
+				<button type="button" onclick={onPrevPage} disabled={feedPage <= 1} aria-label="Previous feed page">Prev</button>
+				<span>{feedPage}/{totalFeedPages}</span>
+				<button type="button" onclick={onNextPage} disabled={feedPage >= totalFeedPages} aria-label="Next feed page">Next</button>
+			</div>
+		{/if}
 	</div>
 
-	<div class="controls-row">
-		<div class="controls polling-control">
-			<label for="polling-select">Auto polling</label>
-			<select id="polling-select" value={pollingMs} onchange={onPollingChange}>
-				{#each pollingOptions as option}
-					<option value={option.value}>{option.label}</option>
-				{/each}
-			</select>
-		</div>
-		<p class="map-debug">{mapMarkerCount} markers | {feedRowCount} rows | {totalItems} total</p>
-	</div>
-
-	<PublishedTimeSlider
-		{minMs}
-		{maxMs}
-		{startMs}
-		{maxWindowMs}
-		onChangeStart={onTimeWindowChange}
-		disabled={loading}
-	/>
-
-	{#if selectedMarker}
-		<div class="active-filter">
-			<span>Filtered by area: {selectedMarker.title} ({selectedMarker.total} articles)</span>
-			<button type="button" onclick={onClearMarkerFilter}>Clear filter</button>
-		</div>
-	{:else}
-		<p class="muted filter-hint">Select a globe marker to filter the feed.</p>
-	{/if}
-
-	{#if error}
-		<p class="error">{error}</p>
-	{:else if filteredFeedLength === 0}
-		<p class="muted">No cards for the selected published-time range.</p>
-	{:else}
-		<div class="cards">
-			{#each pagedFeed as item}
+	{#if collapsed}
+		{#if latestFeedItem}
+			<div class="cards collapsed-cards">
 				<NewsFeedCard
-					source={item.source}
-					title={item.source_title}
-					summary={item.summary}
-					timeLabel={formatTime(item.time_published)}
-					link={item.source_link}
-					locationLabel={formatLocationsForCard(item.cities)}
-					themeUpperLabel={item.keyword_theme_upper}
-					themeLowerLabel={item.keyword_theme_lower}
-					geoRelationshipLabel={summarizeRelationship(item)}
-					selected={selectedNewsId === item.id}
-					onSelect={() => onToggleNewsSelection(item.id)}
+					source={latestFeedItem.source}
+					title={latestFeedItem.source_title}
+					summary={latestFeedItem.summary}
+					timeLabel={formatTime(latestFeedItem.time_published)}
+					link={latestFeedItem.source_link}
+					locationLabel={formatLocationsForCard(latestFeedItem.cities)}
+					themeUpperLabel={latestFeedItem.keyword_theme_upper}
+					themeLowerLabel={latestFeedItem.keyword_theme_lower}
+					geoRelationshipLabel={summarizeRelationship(latestFeedItem)}
+					selected={selectedNewsId === latestFeedItem.id}
+					onSelect={() => onToggleNewsSelection(latestFeedItem.id)}
 				/>
-			{/each}
+			</div>
+		{:else}
+			<p class="muted">No cards for the selected published-time range.</p>
+		{/if}
+	{:else}
+		<div class="controls-row">
+			<div class="controls polling-control">
+				<label for="polling-select">Auto polling</label>
+				<select id="polling-select" value={pollingMs} onchange={onPollingChange}>
+					{#each pollingOptions as option}
+						<option value={option.value}>{option.label}</option>
+					{/each}
+				</select>
+			</div>
+			<p class="map-debug">{mapMarkerCount} markers | {feedRowCount} rows | {totalItems} total</p>
 		</div>
+
+		<PublishedTimeSlider
+			{minMs}
+			{maxMs}
+			{startMs}
+			{maxWindowMs}
+			onChangeStart={onTimeWindowChange}
+			disabled={loading}
+		/>
+
+		{#if selectedMarker}
+			<div class="active-filter">
+				<span>Filtered by area: {selectedMarker.title} ({selectedMarker.total} articles)</span>
+				<button type="button" onclick={onClearMarkerFilter}>Clear filter</button>
+			</div>
+		{:else}
+			<p class="muted filter-hint">Select a globe marker to filter the feed.</p>
+		{/if}
+
+		{#if error}
+			<p class="error">{error}</p>
+		{:else if filteredFeedLength === 0}
+			<p class="muted">No cards for the selected published-time range.</p>
+		{:else}
+			<div class="cards">
+				{#each pagedFeed as item}
+					<NewsFeedCard
+						source={item.source}
+						title={item.source_title}
+						summary={item.summary}
+						timeLabel={formatTime(item.time_published)}
+						link={item.source_link}
+						locationLabel={formatLocationsForCard(item.cities)}
+						themeUpperLabel={item.keyword_theme_upper}
+						themeLowerLabel={item.keyword_theme_lower}
+						geoRelationshipLabel={summarizeRelationship(item)}
+						selected={selectedNewsId === item.id}
+						onSelect={() => onToggleNewsSelection(item.id)}
+					/>
+				{/each}
+			</div>
+		{/if}
 	{/if}
 </section>
 
 <style>
 	.news-overlay {
 		pointer-events: auto;
+		width: 100%;
+		max-width: 30rem;
 		display: flex;
 		flex-direction: column;
 		justify-content: flex-start;
 		align-items: stretch;
 		padding: 0.8rem;
 		min-height: 0;
+		height: 100%;
 		min-width: 0;
-		max-height: min(75vh, 49rem);
+		max-height: none;
 		overflow: hidden;
 		border: 1px solid #f3f6fb1f;
 		backdrop-filter: blur(14px);
 		background: linear-gradient(145deg, #0c131bc9, #111a25a8);
 		box-shadow: 0 16px 40px #02060c88;
 		border-radius: 0.8rem;
+		transform-origin: right bottom;
+		transition: box-shadow 140ms ease;
+	}
+
+	.news-overlay.collapsed {
+		margin-top: auto;
+		align-self: flex-end;
+		height: auto;
+		max-height: min(22rem, 58vh);
 	}
 
 	.panel-heading-row {
@@ -167,6 +220,27 @@
 		margin: 0;
 		font: 600 0.95rem/1.2 'IBM Plex Sans', sans-serif;
 		color: #f6fbff;
+	}
+
+	.heading-title-row {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+
+	.panel-collapse-toggle {
+		width: 1rem;
+		height: 1rem;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border: 1px solid #3a4b5f;
+		border-radius: 0.24rem;
+		background: #101923;
+		color: #c7d5e4;
+		font: 700 0.58rem/1 'IBM Plex Mono', monospace;
+		cursor: pointer;
+		padding: 0;
 	}
 
 	.panel-heading p {
@@ -285,6 +359,7 @@
 	.cards {
 		display: grid;
 		gap: 0.6rem;
+		flex: 1 1 auto;
 		overflow: auto;
 		min-height: 0;
 		min-width: 0;
@@ -301,6 +376,11 @@
 		background: #111824ef;
 		border-color: #364353;
 		min-width: 0;
+	}
+
+	.collapsed-cards {
+		overflow: hidden;
+		flex: 0 0 auto;
 	}
 
 	@media (max-width: 1040px) {

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import OpenWorldGlobe from '$lib/components/OpenWorldGlobe.svelte';
-	import AreaContextPanel from '$lib/components/map/AreaContextPanel.svelte';
 	import FeedOverlayPanel from '$lib/components/map/FeedOverlayPanel.svelte';
 	import MapLegend from '$lib/components/map/MapLegend.svelte';
 	import MapTicker from '$lib/components/map/MapTicker.svelte';
@@ -164,6 +164,7 @@
 			? null
 			: newsFeedState.feed.find((item) => item.id === newsFeedState.selectedNewsId) ?? null
 	);
+	const selectedMarker = $derived(mapMarkers.find((marker) => marker.id === newsFeedState.selectedMarkerId) ?? null);
 
 	const selectedNewsRelationship = $derived.by<GlobeRelationshipOverlay | null>(() => {
 		if (!selectedNews || selectedNews.cities.length < 2) {
@@ -249,7 +250,116 @@
 		};
 	});
 
+	const selectedMarkerRelationship = $derived.by<GlobeRelationshipOverlay | null>(() => {
+		if (!selectedMarker) {
+			return null;
+		}
+
+		const BLUE = '#2ac6ff';
+		const GREEN = '#45ff95';
+		const RED = '#ff4d4d';
+		const selectedArticleIds = new Set(selectedMarker.articleIds);
+		const markerItems = newsFeedState.feed.filter((item) => selectedArticleIds.has(String(item.id)));
+		if (markerItems.length === 0) {
+			return null;
+		}
+
+		const highlights = new Map<string, GlobeRelationshipOverlay['highlights'][number]>();
+		const links = new Map<string, GlobeRelationshipOverlay['links'][number]>();
+		const cityCoordMap = new Map<string, { latitude: number; longitude: number }>();
+
+		const addHighlight = (cityId: string, color: string) => {
+			const coords = cityCoordMap.get(cityId);
+			if (!coords) {
+				return;
+			}
+			highlights.set(`${cityId}:${color}`, {
+				cityId,
+				latitude: coords.latitude,
+				longitude: coords.longitude,
+				color
+			});
+		};
+
+		const addLink = (fromCityId: string, toCityId: string, color: string) => {
+			const from = cityCoordMap.get(fromCityId);
+			const to = cityCoordMap.get(toCityId);
+			if (!from || !to) {
+				return;
+			}
+			links.set(`${fromCityId}:${toCityId}:${color}`, {
+				fromCityId,
+				toCityId,
+				fromLatitude: from.latitude,
+				fromLongitude: from.longitude,
+				toLatitude: to.latitude,
+				toLongitude: to.longitude,
+				color
+			});
+		};
+
+		for (const item of markerItems) {
+			for (const city of item.cities) {
+				const coords = getNumericCoords(city);
+				if (!coords) {
+					continue;
+				}
+				cityCoordMap.set(city.city_id, { latitude: coords.lat, longitude: coords.lon });
+			}
+		}
+
+		if (cityCoordMap.size < 1) {
+			return null;
+		}
+
+		for (const item of markerItems) {
+			if (item.relationships.length === 0) {
+				for (const city of item.cities) {
+					if (cityCoordMap.has(city.city_id)) {
+						addHighlight(city.city_id, BLUE);
+					}
+				}
+				continue;
+			}
+
+			for (const relation of item.relationships) {
+				if (relation.relation_type === 'Independent') {
+					addHighlight(relation.from_city_id, BLUE);
+					addHighlight(relation.to_city_id, BLUE);
+					continue;
+				}
+
+				const color = relation.relation_type === 'Cooperate' ? GREEN : RED;
+				addHighlight(relation.from_city_id, color);
+				addHighlight(relation.to_city_id, color);
+				addLink(relation.from_city_id, relation.to_city_id, color);
+			}
+		}
+
+		if (highlights.size === 0) {
+			for (const cityId of cityCoordMap.keys()) {
+				addHighlight(cityId, BLUE);
+			}
+		}
+
+		return {
+			highlights: [...highlights.values()],
+			links: [...links.values()]
+		};
+	});
+
+	const activeRelationshipOverlay = $derived.by<GlobeRelationshipOverlay | null>(() => {
+		if (selectedMarkerRelationship) {
+			return selectedMarkerRelationship;
+		}
+		if (selectedNewsRelationship) {
+			return selectedNewsRelationship;
+		}
+		return null;
+	});
+
 	const totalFeedPages = $derived.by(() => Math.max(1, Math.ceil(filteredFeed.length / newsFeedState.feedPageSize)));
+	const latestFilteredFeedItem = $derived.by(() => filteredFeed[0] ?? null);
 	const pagedFeed = $derived.by(() => {
 		const start = (newsFeedState.feedPage - 1) * newsFeedState.feedPageSize;
 		return filteredFeed.slice(start, start + newsFeedState.feedPageSize);
@@ -273,6 +383,17 @@
 		});
 	});
 
+	const mapContextLabel = $derived.by(() => {
+		const path = page.url.pathname;
+		if (path.startsWith('/map/korea_estate')) {
+			return 'South Korea Real Estate (WIP)';
+		}
+		if (path.startsWith('/map/tokyo_estate')) {
+			return 'Tokyo Real Estate (WIP)';
+		}
+		return 'Global Context';
+	});
+
 	$effect(() => {
 		newsFeedState.clampFeedPage(totalFeedPages);
 	});
@@ -281,8 +402,6 @@
 		void filteredFeed.length;
 		newsFeedState.resetFeedPage();
 	});
-
-	const selectedMarker = $derived(mapMarkers.find((marker) => marker.id === newsFeedState.selectedMarkerId) ?? null);
 
 	const onMarkerOpen = (markerId: string) => {
 		newsFeedState.setSelectedMarkerId(markerId);
@@ -314,21 +433,23 @@
 	<OpenWorldGlobe
 		markers={mapMarkers}
 		selectedMarkerId={newsFeedState.selectedMarkerId}
-		newsRelationshipOverlay={selectedNewsRelationship}
+		newsRelationshipOverlay={activeRelationshipOverlay}
 		newsFocusTarget={newsFeedState.newsFocusTarget}
 		onMarkerOpen={onMarkerOpen}
 		onMarkerClose={onMarkerClose}
 	/>
-	<MapTicker items={topBannerItems} position="top" ariaLabel="Live news ticker" />
-	<MapTicker items={bottomBannerItems} position="bottom" ariaLabel="Area summary ticker" />
+	<div class="top-row">
+		<div class="map-context-badge" aria-label="Current map context">{mapContextLabel}</div>
+		<div class="upper-bar">
+			<MapTicker items={topBannerItems} position="top" ariaLabel="Live news ticker" inline={true} />
+		</div>
+	</div>
+	<div class="lower-bar">
+		<MapTicker items={bottomBannerItems} position="bottom" ariaLabel="Area summary ticker" />
+	</div>
 
 	<div class="overlay-grid">
 		<div class="sidebar-stack">
-			<section class="title-overlay">
-				<p class="eyebrow">Globe</p>
-				<h1>Global Context and Event Console</h1>
-			</section>
-
 			<FeedOverlayPanel
 				loading={newsFeedState.loading}
 				lastPolledAt={newsFeedState.lastPolledAt}
@@ -352,6 +473,7 @@
 				onClearMarkerFilter={clearMarkerFilter}
 				error={newsFeedState.error}
 				filteredFeedLength={filteredFeed.length}
+				latestFeedItem={latestFilteredFeedItem}
 				{pagedFeed}
 				selectedNewsId={newsFeedState.selectedNewsId}
 				{formatLocationsForCard}
@@ -359,9 +481,6 @@
 				onToggleNewsSelection={toggleNewsSelection}
 			/>
 
-			{#if selectedMarker}
-				<AreaContextPanel marker={selectedMarker} />
-			{/if}
 		</div>
 	</div>
 	<MapLegend items={markerThemeLegend} />
@@ -373,8 +492,10 @@
 		height: 100vh;
 		width: 100%;
 		--globe-banner-offset: 0.75rem;
-		--globe-banner-safe-top: 2.25rem;
-		--globe-banner-safe-bottom: 5.5rem;
+		--globe-banner-safe-top: 2.5rem;
+		--globe-banner-safe-bottom: 2.45rem;
+		--overlay-top-gap: 0.275rem;
+		--overlay-bottom-gap: 0.825rem;
 	}
 
 	.overlay-grid {
@@ -383,12 +504,43 @@
 		display: flex;
 		justify-content: flex-end;
 		align-items: stretch;
-		padding: calc(var(--globe-banner-offset) + var(--globe-banner-safe-top)) 1rem
-			calc(var(--globe-banner-offset) + var(--globe-banner-safe-bottom));
+		padding: calc(var(--globe-banner-offset) + var(--globe-banner-safe-top) + var(--overlay-top-gap))
+			1rem calc(var(--globe-banner-offset) + var(--globe-banner-safe-bottom) + var(--overlay-bottom-gap));
 		gap: 0.9rem;
 		pointer-events: none;
 		z-index: 500;
 		box-sizing: border-box;
+	}
+
+	.top-row {
+		position: absolute;
+		top: var(--globe-banner-offset);
+		left: 1rem;
+		right: 1rem;
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		z-index: 515;
+	}
+
+	.upper-bar {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+
+	.map-context-badge {
+		flex: 0 0 auto;
+		height: 2rem;
+		display: inline-flex;
+		align-items: center;
+		padding: 0 0.68rem;
+		border-radius: 999px;
+		border: 1px solid #8f6421;
+		background: linear-gradient(160deg, #3e2a11e8, #6f4a18d9);
+		color: #ffe4bb;
+		font: 600 0.7rem/1 'IBM Plex Mono', monospace;
+		white-space: nowrap;
+		box-shadow: 0 8px 18px #2a170766;
 	}
 
 	.sidebar-stack {
@@ -396,45 +548,19 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.9rem;
-		width: min(38rem, 47vw);
+		width: min(30rem, 35vw);
+		min-width: min(30rem, 35vw);
+		max-width: 30rem;
 		min-height: 0;
-		max-height: calc(100vh - (var(--globe-banner-offset) + var(--globe-banner-safe-top)) - (var(--globe-banner-offset) + var(--globe-banner-safe-bottom)));
+		height: calc(
+			100vh - (var(--globe-banner-offset) + var(--globe-banner-safe-top) + var(--overlay-top-gap)) -
+				(var(--globe-banner-offset) + var(--globe-banner-safe-bottom) + var(--overlay-bottom-gap))
+		);
+		max-height: calc(
+			100vh - (var(--globe-banner-offset) + var(--globe-banner-safe-top) + var(--overlay-top-gap)) -
+				(var(--globe-banner-offset) + var(--globe-banner-safe-bottom) + var(--overlay-bottom-gap))
+		);
 		overflow: hidden;
-	}
-
-	.title-overlay {
-		pointer-events: auto;
-		border: 1px solid #f3f6fb1f;
-		backdrop-filter: blur(14px);
-		background: linear-gradient(145deg, #0c131bc9, #111a25a8);
-		box-shadow: 0 16px 40px #02060c88;
-		border-radius: 0.8rem;
-	}
-
-	.title-overlay {
-		min-height: 5.76rem;
-		padding: 0.52rem 0.72rem;
-	}
-
-	.eyebrow {
-		margin: 0;
-		font: 600 0.68rem/1 'IBM Plex Mono', monospace;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: #ffb146;
-	}
-
-	h1 {
-		margin: 0.24rem 0 0.28rem;
-		font: 700 clamp(0.92rem, 1.2vw, 1.12rem) / 1.18 'IBM Plex Sans', sans-serif;
-		color: #f1f5fa;
-	}
-
-	.title-overlay > p:not(.eyebrow) {
-		margin: 0;
-		color: #b8c4d1;
-		font-size: 0.73rem;
-		line-height: 1.35;
 	}
 
 	@media (max-width: 1040px) {
@@ -443,36 +569,61 @@
 		}
 
 		.sidebar-stack {
-			width: min(35rem, 56vw);
+			width: min(30rem, 56vw);
+			min-width: min(30rem, 56vw);
 			max-height: min(96vh, 850px);
 		}
 	}
 
 	@media (min-width: 1100px) and (min-height: 700px) and (orientation: landscape) {
 		.sidebar-stack {
-			width: 38rem;
 			height: calc(100vh - (var(--globe-banner-offset) + var(--globe-banner-safe-top)) - (var(--globe-banner-offset) + var(--globe-banner-safe-bottom)));
 			max-height: calc(100vh - (var(--globe-banner-offset) + var(--globe-banner-safe-top)) - (var(--globe-banner-offset) + var(--globe-banner-safe-bottom)));
 		}
 
-		.title-overlay {
-			flex: 0 0 auto;
-		}
 	}
 
 	@media (max-width: 680px) {
+		.top-row {
+			left: 0.75rem;
+			right: 0.75rem;
+		}
+
 		.overlay-grid {
 			padding: calc(var(--globe-banner-offset) + var(--globe-banner-safe-top)) 0.75rem
 				calc(var(--globe-banner-offset) + var(--globe-banner-safe-bottom));
 			gap: 0.65rem;
 		}
 
-		.title-overlay {
-			min-height: 0;
+		.sidebar-stack {
+			width: min(92vw, 34rem);
+			min-width: 0;
+			max-width: 34rem;
+			max-height: calc(100vh - 1.5rem);
+		}
+	}
+
+	@media (max-width: 860px) {
+		.upper-bar,
+		.lower-bar {
+			display: none;
+		}
+
+		.top-row {
+			right: auto;
+		}
+	}
+
+	@media (max-width: 34rem) {
+
+		.overlay-grid {
+			padding: 0.75rem;
 		}
 
 		.sidebar-stack {
-			width: min(92vw, 34rem);
+			width: 100%;
+			max-width: none;
+			min-width: 0;
 			max-height: calc(100vh - 1.5rem);
 		}
 	}

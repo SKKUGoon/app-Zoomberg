@@ -1,4 +1,14 @@
 <script lang="ts">
+	import ThemeTopicIcon from '$lib/components/ThemeTopicIcon.svelte';
+	import {
+		CURRENCY_GREEN,
+		DEVELOPED_STOCKS_BLUE,
+		EMERGING_STOCKS_ORANGE,
+		isCurrencyAssetTheme,
+		isDevelopedStocksTheme,
+		isEmergingStocksTheme
+	} from '$lib/domain/themeTaxonomy';
+
 	let {
 		source,
 		title,
@@ -24,6 +34,19 @@
 		selected?: boolean;
 		onSelect?: () => void;
 	}>();
+
+	const topicIconColor = $derived.by(() => {
+		if (isCurrencyAssetTheme(themeUpperLabel)) {
+			return CURRENCY_GREEN;
+		}
+		if (isDevelopedStocksTheme(themeUpperLabel)) {
+			return DEVELOPED_STOCKS_BLUE;
+		}
+		if (isEmergingStocksTheme(themeUpperLabel)) {
+			return EMERGING_STOCKS_ORANGE;
+		}
+		return '#f2a93b';
+	});
 </script>
 
 <div
@@ -59,19 +82,18 @@
 	{#if summary}
 		<p class="summary">{summary}</p>
 	{/if}
-	<div class="meta">
-		<span>Published: {timeLabel}</span>
-	</div>
-	<div class="meta">
+	<div class="topic-main-row">
+		<ThemeTopicIcon themeLabel={themeUpperLabel} color={topicIconColor} size={15} />
 		<span>Main topic: {themeUpperLabel}</span>
-		<span>Subtopic: {themeLowerLabel}</span>
 	</div>
+	<p class="topic-sub">Subtopic: {themeLowerLabel}</p>
 	{#if geoRelationshipLabel}
 		<div class="meta">
 			<span>Geo-relationship: {geoRelationshipLabel}</span>
 		</div>
 	{/if}
 	<div class="card-action-row">
+		<span class="published-time">Published: {timeLabel}</span>
 		<button
 			type="button"
 			class="focus-button"
@@ -156,9 +178,25 @@
 	.meta {
 		display: flex;
 		flex-wrap: wrap;
-		justify-content: space-between;
 		gap: 0.32rem 0.7rem;
 		margin-top: 0.22rem;
+		font-size: 0.79rem;
+		line-height: 1.32;
+		color: #95a0ac;
+	}
+
+	.topic-main-row {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		margin-top: 0.22rem;
+		font-size: 0.79rem;
+		line-height: 1.32;
+		color: #95a0ac;
+	}
+
+	.topic-sub {
+		margin: 0.16rem 0 0;
 		font-size: 0.79rem;
 		line-height: 1.32;
 		color: #95a0ac;
@@ -167,7 +205,14 @@
 	.card-action-row {
 		margin-top: 0.62rem;
 		display: flex;
-		justify-content: flex-end;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+
+	.published-time {
+		font: 500 0.72rem/1 'IBM Plex Mono', monospace;
+		color: #a6b2bf;
 	}
 
 	.focus-button {

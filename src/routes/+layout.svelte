@@ -1,24 +1,58 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import favicon from '$lib/assets/favicon.svg';
 
-	const navItems = [
-		{ label: 'Map', href: '/map', icon: 'map' },
-		{ label: 'Setting', href: '/settings', icon: 'build' }
-	] as const;
+	type NavChild = {
+		label: string;
+		href: string;
+	};
+
+	type NavItem = {
+		label: string;
+		href: string;
+		icon: string;
+		children?: NavChild[];
+	};
+
+	const navItems: NavItem[] = [
+		{
+			label: 'Map',
+			href: '/map/global',
+			icon: 'map',
+			children: [
+				{ label: 'Global Context', href: '/map/global' },
+				{ label: 'South Korea Real Estate (WIP)', href: '/map/korea_estate' },
+				{ label: 'Tokyo Real Estate (WIP)', href: '/map/tokyo_estate' }
+			]
+		},
+		{ label: 'Settings', href: '/settings', icon: 'build' }
+	];
 
 	const isActive = (href: string, path: string) => {
-		return path.startsWith(href);
+		return path === href || path.startsWith(`${href}/`);
+	};
+
+	const isItemActive = (item: NavItem, path: string) => {
+		if (item.children && item.children.some((entry) => isActive(entry.href, path))) {
+			return true;
+		}
+		return isActive(item.href, path);
 	};
 
 	const isMapRoute = $derived(page.url.pathname.startsWith('/map'));
-	let sidebarCollapsed = $state(false);
+	let sidebarCollapsed = $state(true);
+	let mapMobileNavOpen = $state(false);
+
+	$effect(() => {
+		if (!isMapRoute) {
+			mapMobileNavOpen = false;
+		}
+	});
 
 	let { children } = $props();
 </script>
 
 <svelte:head>
-	<link rel="icon" href={favicon} />
+	<link rel="icon" href="/logo.png" />
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
 	<link
@@ -29,10 +63,10 @@
 		href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,500,0,0"
 		rel="stylesheet"
 	/>
-	<title>Zoomberg Terminal</title>
+	<title>Briefing Room</title>
 </svelte:head>
 
-<div class="shell" class:collapsed={sidebarCollapsed}>
+<div class="shell" class:collapsed={sidebarCollapsed} class:map-mobile-route={isMapRoute}>
 	<aside class="sidebar" aria-label="Primary navigation">
 		<button
 			type="button"
@@ -47,22 +81,106 @@
 		</button>
 
 		<div class="brand">
-			<div class="brand-dot" aria-hidden="true"></div>
+			<img class="brand-logo" src="/logo.png" alt="Briefing Room logo" />
 			<div class="brand-copy">
-				<p class="brand-title">Zoomberg Terminal</p>
+				<p class="brand-title">Briefing Room</p>
 				<p class="brand-subtitle">Issue Center</p>
 			</div>
 		</div>
 
 		<nav class="nav">
 			{#each navItems as item}
-				<a class:active={isActive(item.href, page.url.pathname)} href={item.href} aria-label={item.label}>
-					<span class="nav-icon material-symbols-outlined" aria-hidden="true">{item.icon}</span>
-					<span class="nav-label">{item.label}</span>
-				</a>
+				<div class="nav-group">
+					<a class:active={isItemActive(item, page.url.pathname)} href={item.href} aria-label={item.label}>
+						<span class="nav-icon material-symbols-outlined" aria-hidden="true">{item.icon}</span>
+						<span class="nav-copy">
+							<span class="nav-label">{item.label}</span>
+						</span>
+					</a>
+					{#if item.children && item.children.length > 0}
+						<div class="nav-subtitle-list" role="list" aria-label={`${item.label} views`}>
+							{#each item.children as child}
+								<a
+									class={`nav-subtitle ${isActive(child.href, page.url.pathname) ? 'active' : ''}`}
+									href={child.href}
+								>{child.label}</a
+								>
+							{/each}
+						</div>
+					{/if}
+				</div>
 			{/each}
 		</nav>
 	</aside>
+
+	{#if isMapRoute}
+		<button
+			type="button"
+			class="map-nav-fab"
+			aria-label={mapMobileNavOpen ? 'Close map navigation menu' : 'Open map navigation menu'}
+			aria-expanded={mapMobileNavOpen}
+			onclick={() => {
+				mapMobileNavOpen = !mapMobileNavOpen;
+			}}
+		>
+			<span class="material-symbols-outlined" aria-hidden="true">
+				{mapMobileNavOpen ? 'close' : 'menu'}
+			</span>
+		</button>
+
+		{#if mapMobileNavOpen}
+			<button
+				type="button"
+				class="map-nav-backdrop"
+				aria-label="Close map navigation menu"
+				onclick={() => {
+					mapMobileNavOpen = false;
+				}}
+			></button>
+			<aside class="map-nav-drawer" aria-label="Map navigation menu">
+				<div class="brand map-nav-brand">
+					<img class="brand-logo" src="/logo.png" alt="Briefing Room logo" />
+					<div class="brand-copy map-nav-brand-copy">
+						<p class="brand-title">Briefing Room</p>
+						<p class="brand-subtitle">Issue Center</p>
+					</div>
+				</div>
+				<nav class="nav map-nav-list">
+					{#each navItems as item}
+						<div class="nav-group">
+							<a
+								class:active={isItemActive(item, page.url.pathname)}
+								href={item.href}
+								aria-label={item.label}
+								onclick={() => {
+									mapMobileNavOpen = false;
+								}}
+							>
+								<span class="nav-icon material-symbols-outlined" aria-hidden="true">{item.icon}</span>
+								<span class="nav-copy">
+									<span class="nav-label">{item.label}</span>
+								</span>
+							</a>
+							{#if item.children && item.children.length > 0}
+								<div class="nav-subtitle-list" role="list" aria-label={`${item.label} views`}>
+									{#each item.children as child}
+										<a
+											class={`nav-subtitle ${isActive(child.href, page.url.pathname) ? 'active' : ''}`}
+											href={child.href}
+											onclick={() => {
+												mapMobileNavOpen = false;
+											}}
+										>{child.label}</a
+										>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					{/each}
+				</nav>
+			</aside>
+		{/if}
+	{/if}
 
 	<main class="content" class:map-mode={isMapRoute}>
 		{@render children()}
@@ -129,12 +247,11 @@
 		margin-bottom: 1rem;
 	}
 
-	.brand-dot {
-		width: 0.9rem;
-		height: 0.9rem;
-		border-radius: 50%;
-		background: #f7a437;
-		box-shadow: 0 0 10px #f7a43755;
+	.brand-logo {
+		width: 2.6rem;
+		height: 2.6rem;
+		object-fit: cover;
+		flex: 0 0 auto;
 	}
 
 	.brand-title {
@@ -149,13 +266,13 @@
 	}
 
 	.brand-copy,
-	.nav-label {
+	.nav-copy {
 		opacity: 1;
 		transition: opacity 130ms ease;
 	}
 
 	.shell.collapsed .brand-copy,
-	.shell.collapsed .nav-label {
+	.shell.collapsed .nav-copy {
 		opacity: 0;
 		width: 0;
 		overflow: hidden;
@@ -163,12 +280,18 @@
 
 	.shell.collapsed .brand {
 		justify-content: center;
+		gap: 0;
 		padding-inline: 0;
 	}
 
 	.nav {
 		display: grid;
 		gap: 0.55rem;
+	}
+
+	.nav-group {
+		display: grid;
+		gap: 0.36rem;
 	}
 
 	.nav a {
@@ -184,18 +307,58 @@
 		transition: transform 180ms ease, background-color 180ms ease, border-color 180ms ease;
 	}
 
+	.nav-copy {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+	}
+
+	.nav-label {
+		font-weight: 500;
+		line-height: 1.1;
+	}
+
+	.nav-subtitle {
+		font: 500 0.67rem/1.2 'IBM Plex Mono', monospace;
+		color: #8f98a3;
+		text-decoration: none;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 100%;
+		padding: 0.28rem 0.38rem;
+		border: 1px solid #262c33;
+		border-radius: 0.36rem;
+		background: #131920;
+	}
+
+	.nav-subtitle:hover {
+		border-color: #36404b;
+		color: #c8d1dc;
+	}
+
+	.nav-subtitle.active {
+		border-color: #f7a43766;
+		color: #f6f9fc;
+		background: #191f27;
+	}
+
+	.nav-subtitle-list {
+		display: grid;
+		gap: 0.16rem;
+		margin-top: 0.2rem;
+		padding-left: 2.15rem;
+	}
+
 	.nav-icon {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 1.55rem;
-		height: 1.55rem;
-		border-radius: 0.4rem;
-		background: #1b2026;
-		border: 1px solid #2a3037;
+		width: 1.2rem;
+		height: 1.2rem;
 		color: #d8e1ea;
 		flex: 0 0 auto;
-		font-size: 1rem;
+		font-size: 1.1rem;
 		font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24;
 	}
 
@@ -206,8 +369,22 @@
 	}
 
 	.shell.collapsed .nav-icon {
-		width: 1.9rem;
-		height: 1.9rem;
+		width: 1.3rem;
+		height: 1.3rem;
+	}
+
+	.shell.collapsed .nav-subtitle {
+		display: none;
+	}
+
+	.shell.collapsed .nav-subtitle-list {
+		display: none;
+	}
+
+	.shell.collapsed .brand-logo {
+		width: 2.7rem;
+		height: 2.7rem;
+		margin-inline: auto;
 	}
 
 	.shell.collapsed .collapse-toggle {
@@ -238,16 +415,22 @@
 		padding: 0;
 	}
 
+	.map-nav-fab,
+	.map-nav-backdrop,
+	.map-nav-drawer {
+		display: none;
+	}
+
 	@media (max-width: 860px) {
-		.shell {
+		.shell:not(.map-mobile-route) {
 			grid-template-columns: 1fr;
 		}
 
-		.shell.collapsed {
+		.shell:not(.map-mobile-route).collapsed {
 			grid-template-columns: 1fr;
 		}
 
-		.sidebar {
+		.shell:not(.map-mobile-route) .sidebar {
 			position: sticky;
 			top: 0;
 			z-index: 20;
@@ -256,27 +439,115 @@
 			padding-bottom: 0.9rem;
 		}
 
-		.brand {
+		.shell:not(.map-mobile-route) .brand {
 			margin-bottom: 0.7rem;
 			padding-bottom: 0.75rem;
 		}
 
-		.nav {
+		.shell:not(.map-mobile-route) .nav {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 
-		.nav a {
+		.shell:not(.map-mobile-route) .nav a {
 			text-align: center;
 			padding-inline: 0.45rem;
 			justify-content: center;
 		}
 
-		.content {
+		.shell:not(.map-mobile-route) .nav-copy {
+			align-items: center;
+		}
+
+		.shell:not(.map-mobile-route) .nav-subtitle {
+			display: none;
+		}
+
+		.shell:not(.map-mobile-route) .nav-subtitle-list {
+			display: none;
+		}
+
+		.shell:not(.map-mobile-route) .content {
 			padding-top: 1rem;
 		}
 
-		.content.map-mode {
+		.shell:not(.map-mobile-route) .content.map-mode {
 			padding-top: 0;
+		}
+	}
+
+	@media (max-width: 860px) {
+		.shell.map-mobile-route {
+			grid-template-columns: 1fr;
+		}
+
+		.shell.map-mobile-route .sidebar {
+			display: none;
+		}
+
+		.shell.map-mobile-route .content.map-mode {
+			padding: 0;
+		}
+
+		.shell.map-mobile-route .map-nav-fab {
+			display: inline-flex;
+			position: fixed;
+			top: 0.75rem;
+			left: 0.75rem;
+			width: 2.8rem;
+			height: 2.8rem;
+			align-items: center;
+			justify-content: center;
+			border-radius: 999px;
+			border: 1px solid #2f3a45;
+			background: #121a24f2;
+			color: #e4edf7;
+			box-shadow: 0 10px 20px #0000005f;
+			z-index: 1200;
+		}
+
+		.shell.map-mobile-route .map-nav-fab .material-symbols-outlined {
+			font-size: 1.25rem;
+			font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24;
+		}
+
+		.shell.map-mobile-route .map-nav-backdrop {
+			display: block;
+			position: fixed;
+			inset: 0;
+			border: 0;
+			padding: 0;
+			margin: 0;
+			background: #060a10bf;
+			z-index: 1180;
+		}
+
+		.shell.map-mobile-route .map-nav-drawer {
+			display: block;
+			position: fixed;
+			top: 4.1rem;
+			left: 0.75rem;
+			right: 0.75rem;
+			padding: 0.7rem;
+			border: 1px solid #2f3a45;
+			border-radius: 0.7rem;
+			background: linear-gradient(180deg, #10161ef7 0%, #0b1118f6 100%);
+			box-shadow: 0 18px 34px #02060f8c;
+			z-index: 1190;
+		}
+
+		.shell.map-mobile-route .map-nav-brand {
+			margin-bottom: 0.75rem;
+			padding: 0.4rem 0.35rem 0.75rem;
+		}
+
+		.shell.map-mobile-route .map-nav-brand-copy {
+			opacity: 1;
+			width: auto;
+			overflow: visible;
+		}
+
+		.shell.map-mobile-route .map-nav-list {
+			grid-template-columns: 1fr;
 		}
 	}
 </style>

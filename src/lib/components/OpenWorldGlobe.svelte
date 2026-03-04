@@ -8,6 +8,7 @@
 		ScreenSpaceEventHandler,
 		Viewer
 	} from 'cesium';
+	import MarkerInfoHoverPanel from '$lib/components/MarkerInfoHoverPanel.svelte';
 	import {
 		CURRENCY_GREEN,
 		CURRENCY_GREEN_SELECTED,
@@ -53,17 +54,16 @@
 	let cameraMoveEndHandler: (() => void) | null = null;
 	const markerEntities = new Map<string, Entity>();
 	const relationshipEntities = new Map<string, Entity>();
-	let echartsModule: typeof import('echarts') | null = null;
-	let wordCloudReady = $state(false);
-	let popupCloudContainer = $state<HTMLDivElement | null>(null);
-	let popupCloudChart: import('echarts').ECharts | null = null;
+	let hoveredMarkerId = $state<string | null>(null);
 	let loadError = $state('');
+	let popupPlacement = $state<'left' | 'right'>('right');
+	let popupStyle = $state('opacity: 0; pointer-events: none;');
 	const MIN_ZOOM = 2.6;
 	const MAX_ZOOM = 6;
 	const ZOOM_HEIGHT_SCALE = 70_000_000;
-	const SIDEBAR_COMPENSATION_FACTOR = 0.28;
+	const SIDEBAR_COMPENSATION_FACTOR = 0.38;
 	const SIDEBAR_COMPENSATION_MIN_METERS = 120_000;
-	const SIDEBAR_COMPENSATION_MAX_METERS = 420_000;
+	const SIDEBAR_COMPENSATION_MAX_METERS = 560_000;
 
 	const longitudeOffsetFromMeters = (meters: number, latitude: number) => {
 		const metersPerDegreeLon = Math.max(22_264, 111_320 * Math.cos((latitude * Math.PI) / 180));
@@ -154,14 +154,6 @@
 		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 	};
 
-	const markerTooltip = (marker: MapMarker) => {
-		const parts = marker.segments
-			.slice(0, 4)
-			.map((segment) => `${segment.label}: ${segment.weight}`)
-			.join(' | ');
-		return parts.length > 0 ? `Theme mix: ${parts}` : 'Theme mix: n/a';
-	};
-
 	const toColor = (value: string, fallback: string): Color | null => {
 		if (!cesium) {
 			return null;
@@ -242,27 +234,6 @@
 		viewer.scene.requestRender();
 	};
 
-	const focusMarker = (markerId: string) => {
-		if (!viewer || !cesium) {
-			return;
-		}
-		const marker = markers.find((entry: MapMarker) => entry.id === markerId);
-		if (!marker) {
-			return;
-		}
-		const targetHeight = ZOOM_HEIGHT_SCALE / 2 ** MAX_ZOOM;
-		const offsetMeters = Math.max(
-			SIDEBAR_COMPENSATION_MIN_METERS,
-			Math.min(SIDEBAR_COMPENSATION_MAX_METERS, targetHeight * SIDEBAR_COMPENSATION_FACTOR)
-		);
-		// Shift camera target east so marker lands left-of-center under the right-side panel.
-		const offsetLongitude = marker.longitude + longitudeOffsetFromMeters(offsetMeters, marker.latitude);
-		viewer.camera.flyTo({
-			destination: cesium.Cartesian3.fromDegrees(offsetLongitude, marker.latitude, targetHeight),
-			duration: 1.05
-		});
-	};
-
 	const focusCoordinates = (focusTarget: GlobeFocusTarget) => {
 		if (!viewer || !cesium) {
 			return;
@@ -310,70 +281,39 @@
 
 	const approximateZoomFromHeight = (heightMeters: number) => Math.max(0, Math.log2(ZOOM_HEIGHT_SCALE / heightMeters));
 	const heightFromApproximateZoom = (zoom: number) => ZOOM_HEIGHT_SCALE / 2 ** zoom;
-	const colorForWordRatio = (ratio: number) => {
-		const clamped = Math.min(1, Math.max(0, ratio));
-		const channel = Math.round(148 + clamped * 107);
-		const hex = channel.toString(16).padStart(2, '0');
-		return `#${hex}${hex}${hex}`;
-	};
 
-	const disposePopupWordCloud = () => {
-		if (popupCloudChart) {
-			popupCloudChart.dispose();
-			popupCloudChart = null;
-		}
-	};
-
-	const mountPopupWordCloud = () => {
-		if (!wordCloudReady || !echartsModule) {
-			return;
-		}
-		if (!selectedMarker || selectedMarker.wordCloud.length === 0 || !popupCloudContainer) {
-			disposePopupWordCloud();
+	const updatePopupAnchor = () => {
+		if (!viewer || !cesium || !hoveredMarker) {
+			popupStyle = 'opacity: 0; pointer-events: none;';
 			return;
 		}
 
-		disposePopupWordCloud();
-		const chart = echartsModule.init(popupCloudContainer, undefined, { renderer: 'canvas' });
-		const maxWeight = selectedMarker.wordCloud.reduce((max: number, term: { word: string; weight: number }) => Math.max(max, term.weight), 1);
-		const data = selectedMarker.wordCloud.map((term: { word: string; weight: number }) => {
-			const ratio = term.weight / maxWeight;
-			const fontWeight = ratio > 0.72 ? 800 : ratio > 0.5 ? 700 : 600;
-			return {
-				name: term.word,
-				value: term.weight,
-				textStyle: {
-					color: colorForWordRatio(ratio),
-					fontWeight
-				}
-			};
-		});
+		const markerPosition = cesium.Cartesian3.fromDegrees(hoveredMarker.longitude, hoveredMarker.latitude);
+		const screenPoint = cesium.SceneTransforms.worldToWindowCoordinates(viewer.scene, markerPosition);
+		if (!screenPoint) {
+			popupStyle = 'opacity: 0; pointer-events: none;';
+			return;
+		}
 
-		chart.setOption({
-			backgroundColor: 'transparent',
-			series: [
-				{
-					type: 'wordCloud',
-					shape: 'circle',
-					left: 'center',
-					top: 'center',
-					width: '100%',
-					height: '100%',
-					gridSize: 5,
-					sizeRange: [12, 34],
-					rotationRange: [0, 0],
-					drawOutOfBound: false,
-					layoutAnimation: true,
-					textStyle: {
-						fontFamily: 'IBM Plex Sans, sans-serif'
-					},
-					data
-				}
-			]
-		});
+		const viewportWidth = window.innerWidth;
+		const viewportHeight = window.innerHeight;
+		const padding = 12;
+		const panelWidth = Math.min(420, Math.max(280, viewportWidth * 0.34));
+		const panelHeight = Math.min(380, Math.max(260, viewportHeight * 0.34));
+		const anchorGap = 20;
 
-		popupCloudChart = chart;
-		window.setTimeout(() => popupCloudChart?.resize(), 0);
+		let placement: 'left' | 'right' = 'right';
+		let left = screenPoint.x + anchorGap;
+		if (left + panelWidth > viewportWidth - padding) {
+			placement = 'left';
+			left = screenPoint.x - panelWidth - anchorGap;
+		}
+
+		left = Math.max(padding, Math.min(viewportWidth - panelWidth - padding, left));
+		const top = Math.max(padding, Math.min(viewportHeight - panelHeight - padding, screenPoint.y - panelHeight * 0.46));
+
+		popupPlacement = placement;
+		popupStyle = `left: ${Math.round(left)}px; top: ${Math.round(top)}px; opacity: 1; pointer-events: none;`;
 	};
 
 	const renderMarkers = () => {
@@ -482,6 +422,7 @@
 		}
 
 		syncSelection();
+		updatePopupAnchor();
 		viewer.scene.requestRender();
 	};
 
@@ -578,10 +519,11 @@
 			viewer.selectedEntity = undefined;
 		}
 
+		updatePopupAnchor();
 		viewer.scene.requestRender();
 	};
 
-	const selectedMarker = $derived(markers.find((marker: MapMarker) => marker.id === selectedMarkerId) ?? null);
+	const hoveredMarker = $derived(markers.find((marker: MapMarker) => marker.id === hoveredMarkerId) ?? null);
 
 	$effect(() => {
 		void markers;
@@ -591,10 +533,7 @@
 	$effect(() => {
 		void selectedMarkerId;
 		syncSelection();
-		if (selectedMarkerId) {
-			focusMarker(selectedMarkerId);
-		}
-		window.setTimeout(() => mountPopupWordCloud(), 0);
+		window.setTimeout(() => updatePopupAnchor(), 0);
 	});
 
 	$effect(() => {
@@ -606,16 +545,25 @@
 	$effect(() => {
 		if (newsFocusTarget) {
 			focusCoordinates(newsFocusTarget);
+			window.setTimeout(() => updatePopupAnchor(), 0);
 		}
 	});
 
 	$effect(() => {
-		void wordCloudReady;
-		window.setTimeout(() => mountPopupWordCloud(), 0);
+		void hoveredMarker;
+		window.setTimeout(() => updatePopupAnchor(), 0);
 	});
 
 	onMount(() => {
 		let alive = true;
+		const onResize = () => {
+			if (!viewer) {
+				return;
+			}
+			updatePopupAnchor();
+			viewer.scene.requestRender();
+		};
+		window.addEventListener('resize', onResize);
 
 		void (async () => {
 			try {
@@ -658,12 +606,10 @@
 				baseMapLayer.saturation = 0.08;
 				baseMapLayer.brightness = 0.46;
 				baseMapLayer.contrast = 1.08;
-				// Tile labels can't be truly resized, so reduce prominence to read ~smaller.
 				referenceLayer.alpha = 0.38;
 				referenceLayer.saturation = 0;
 				referenceLayer.brightness = 0.68;
 				referenceLayer.contrast = 0.82;
-				// Keep the sphere very dark while preserving map context.
 				viewer.scene.globe.baseColor = c.Color.fromCssColorString('#0a0f15');
 				viewer.scene.globe.enableLighting = false;
 				viewer.scene.globe.translucency.enabled = false;
@@ -688,7 +634,6 @@
 				viewer.scene.maximumRenderTimeChange = Number.POSITIVE_INFINITY;
 				viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 1.15);
 				viewer.targetFrameRate = 30;
-				// Reduce center-vs-edge tile mismatch by refining more aggressively.
 				viewer.scene.globe.maximumScreenSpaceError = 1;
 				viewer.scene.globe.preloadAncestors = true;
 				viewer.scene.globe.preloadSiblings = true;
@@ -710,6 +655,7 @@
 					const height = cartographic.height;
 					const zoomApprox = approximateZoomFromHeight(height);
 					console.info('[sphere-globe] zoom approx:', zoomApprox.toFixed(2), '| camera height (m):', Math.round(height));
+					updatePopupAnchor();
 					viewer.scene.requestRender();
 				};
 				viewer.camera.moveEnd.addEventListener(cameraMoveEndHandler);
@@ -723,12 +669,25 @@
 					const picked = viewer.scene.pick(movement.position);
 					const markerId = picked?.id?.properties?.markerId?.getValue?.();
 					if (typeof markerId === 'string') {
-						focusMarker(markerId);
 						onMarkerOpen?.(markerId);
 						return;
 					}
 					onMarkerClose?.();
 				}, c.ScreenSpaceEventType.LEFT_CLICK);
+
+				clickHandler.setInputAction((movement: { endPosition: Cartesian2 }) => {
+					if (!viewer || !cesium) {
+						return;
+					}
+					const picked = viewer.scene.pick(movement.endPosition);
+					const markerId = picked?.id?.properties?.markerId?.getValue?.();
+					const nextHoveredId = typeof markerId === 'string' ? markerId : null;
+					if (hoveredMarkerId !== nextHoveredId) {
+						hoveredMarkerId = nextHoveredId;
+						updatePopupAnchor();
+						viewer.scene.requestRender();
+					}
+				}, c.ScreenSpaceEventType.MOUSE_MOVE);
 
 				renderMarkers();
 				viewer.scene.requestRender();
@@ -743,7 +702,9 @@
 			if (clickHandler) {
 				clickHandler.destroy();
 			}
+			window.removeEventListener('resize', onResize);
 			clickHandler = null;
+			hoveredMarkerId = null;
 			if (viewer && cameraMoveEndHandler) {
 				viewer.camera.moveEnd.removeEventListener(cameraMoveEndHandler);
 			}
@@ -753,46 +714,17 @@
 			if (viewer) {
 				viewer.destroy();
 			}
-			disposePopupWordCloud();
 			viewer = null;
 			cesium = null;
-		};
-	});
-
-	onMount(() => {
-		void (async () => {
-			try {
-				const echarts = await import('echarts');
-				await import('echarts-wordcloud');
-				echartsModule = echarts;
-				wordCloudReady = true;
-				window.setTimeout(() => mountPopupWordCloud(), 0);
-			} catch (error) {
-				console.error('globe popup wordcloud init failed', error);
-			}
-		})();
-
-		return () => {
-			disposePopupWordCloud();
-			echartsModule = null;
-			wordCloudReady = false;
 		};
 	});
 </script>
 
 <div bind:this={globeContainer} class="globe-root" role="img" aria-label="Sphere globe map"></div>
 
-{#if false && selectedMarker}
-	<div class="globe-popup">
-		<p class="popup-title">{selectedMarker.title}</p>
-		<p class="popup-detail">{selectedMarker.detail}</p>
-		<p class="popup-theme">{markerTooltip(selectedMarker)}</p>
-		{#if selectedMarker.wordCloud.length === 0}
-			<div class="popup-cloud-empty">No theme terms</div>
-		{:else}
-			<div bind:this={popupCloudContainer} class="popup-cloud-chart"></div>
-		{/if}
-		<button type="button" onclick={onMarkerClose}>Clear selection</button>
+{#if hoveredMarker}
+	<div class={`globe-popup globe-popup-${popupPlacement}`} style={popupStyle}>
+		<MarkerInfoHoverPanel marker={hoveredMarker} />
 	</div>
 {/if}
 
@@ -810,9 +742,9 @@
 
 	.globe-popup {
 		position: absolute;
-		right: 1rem;
-		top: 5.15rem;
-		width: min(38rem, 47vw);
+		width: clamp(17.5rem, 34vw, 26.25rem);
+		max-height: min(23.75rem, 72vh);
+		overflow: hidden;
 		padding: 0.65rem 0.75rem;
 		border: 1px solid #2a3645;
 		border-radius: 0.5rem;
@@ -820,51 +752,16 @@
 		box-shadow: 0 10px 28px #00000090;
 		color: #dde8f6;
 		z-index: 620;
-		pointer-events: auto;
+		transform: translateZ(0);
+		transition: opacity 140ms ease;
 	}
 
-	.popup-title {
-		margin: 0;
-		color: #f5f8fc;
-		font: 700 0.85rem/1.2 'IBM Plex Sans', sans-serif;
+	.globe-popup-right {
+		border-left: 2px solid #2f6d9f;
 	}
 
-	.popup-detail {
-		margin: 0.25rem 0 0;
-		color: #a9c2dd;
-		font-size: 0.76rem;
-	}
-
-	.popup-theme {
-		margin: 0.25rem 0 0.5rem;
-		color: #f3b24f;
-		font-size: 0.73rem;
-	}
-
-	.popup-cloud-chart {
-		margin-top: 0.48rem;
-		padding-top: 0.42rem;
-		border-top: 1px solid #36516d;
-		width: 220px;
-		height: 145px;
-	}
-
-	.popup-cloud-empty {
-		margin-top: 0.48rem;
-		padding-top: 0.42rem;
-		border-top: 1px solid #36516d;
-		color: #b7c6d4;
-		font-size: 0.78rem;
-	}
-
-	.globe-popup button {
-		padding: 0.26rem 0.5rem;
-		border: 1px solid #825f2a;
-		border-radius: 0.36rem;
-		background: #1a2330;
-		color: #f3c06d;
-		font-size: 0.73rem;
-		cursor: pointer;
+	.globe-popup-left {
+		border-right: 2px solid #2f6d9f;
 	}
 
 	.globe-error {
@@ -882,15 +779,14 @@
 
 	@media (max-width: 1040px) {
 		.globe-popup {
-			width: min(35rem, 56vw);
+			width: min(21rem, 54vw);
 		}
 	}
 
 	@media (max-width: 680px) {
 		.globe-popup {
-			top: 8.7rem;
-			right: 0.75rem;
-			width: min(92vw, 34rem);
+			width: min(86vw, 20rem);
+			max-height: min(60vh, 19rem);
 		}
 	}
 

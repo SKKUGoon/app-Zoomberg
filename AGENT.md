@@ -38,6 +38,25 @@ Primary navigation must contain exactly two top-level tabs:
 1. `Map`
 2. `Settings`
 
+## Menu Display States (Required)
+
+The navigation menu has three canonical display states that future changes must preserve:
+
+1. `Full`
+   - Desktop expanded sidebar.
+   - Shape: wide vertical panel with logo, tab labels, and map sub-route links visible.
+   - Used when `sidebarCollapsed` is false on non-mobile layouts.
+
+2. `Collapsed`
+   - Desktop slim rail.
+   - Shape: narrow vertical strip showing icon buttons only; labels and sub-route links are hidden.
+   - Used when `sidebarCollapsed` is true on non-mobile layouts.
+
+3. `Mobile-Minimized`
+   - Map-route mobile navigation pattern.
+   - Shape: floating circular menu button (FAB) at top-left; sidebar body is hidden until tapped, then a compact drawer appears.
+   - Active on `/map` routes at widths `<= 860px`.
+
 ## Security Rules
 
 - Secrets only via environment variables.

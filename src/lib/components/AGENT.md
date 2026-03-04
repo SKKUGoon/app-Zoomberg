@@ -15,6 +15,9 @@ Avoid duplicate UI implementation across routes. Reuse these components first be
 | `SectionTitle` | `src/lib/components/SectionTitle.svelte` | Simple section heading between grouped panels |
 | `OpenWorldGlobe` | `src/lib/components/OpenWorldGlobe.svelte` | Cesium globe component with interactive news markers, AIS vessel overlays, and camera focus |
 | `AreaWordCloud` | `src/lib/components/AreaWordCloud.svelte` | ECharts wordcloud renderer for selected area context |
+| `ThemeTopicIcon` | `src/lib/components/ThemeTopicIcon.svelte` | Reusable topic icon renderer shared by feed cards and map legend |
+| `ThemeMixPieChart` | `src/lib/components/ThemeMixPieChart.svelte` | Reusable Bloomberg-styled Apache ECharts pie chart for theme mix composition |
+| `MarkerInfoHoverPanel` | `src/lib/components/MarkerInfoHoverPanel.svelte` | Hover-only marker info panel showing area name, theme-mix pie chart, and word cloud |
 | `NewsFeedCard` | `src/lib/components/NewsFeedCard.svelte` | Clickable news card with source/title/link/summary/location/keyword/model metadata |
 
 ## Reuse Rules
