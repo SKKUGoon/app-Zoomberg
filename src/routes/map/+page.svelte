@@ -50,6 +50,7 @@
 		return () => newsFeedState.stop();
 	});
 
+
 	const formatTime = (isoDate: string) => {
 		const date = new Date(isoDate);
 		return new Intl.DateTimeFormat('en', {
@@ -327,6 +328,7 @@
 				<p class="eyebrow">Globe</p>
 				<h1>Global Context and Event Console</h1>
 				<p>Showing geolocated market-related news ordered by published time. Time window supports up to 48 hours.</p>
+				<p>TODO: AIS live stream overlay is temporarily disabled and will be revisited when AIS Stream coverage is more mature: https://aisstream.io/coverage</p>
 			</section>
 
 			<FeedOverlayPanel

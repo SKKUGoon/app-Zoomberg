@@ -90,3 +90,32 @@ export type NewsCard = {
 	created_at: string;
 	updated_at: string;
 };
+
+export type AisVesselClass = 'beam_40_plus' | 'military';
+
+export type AisFreshness = 'live' | 'stale';
+
+export type AisConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+
+export type AisLiveVessel = {
+	mmsi: string;
+	shipName: string | null;
+	shipType: number | null;
+	beamM: number | null;
+	latitude: number;
+	longitude: number;
+	sog: number | null;
+	cog: number | null;
+	trueHeading: number | null;
+	messageType: string;
+	lastSeenAt: string;
+	freshness: AisFreshness;
+	classTags: AisVesselClass[];
+};
+
+export type AisLivePayload = {
+	status: AisConnectionStatus;
+	updatedAt: string;
+	vessels: AisLiveVessel[];
+	error?: string;
+};

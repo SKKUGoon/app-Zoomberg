@@ -13,7 +13,7 @@ Avoid duplicate UI implementation across routes. Reuse these components first be
 | `PageHeader` | `src/lib/components/PageHeader.svelte` | Standard page top block (eyebrow, title, description) |
 | `PanelCard` | `src/lib/components/PanelCard.svelte` | Reusable dark card wrapper for panels, charts, and text blocks |
 | `SectionTitle` | `src/lib/components/SectionTitle.svelte` | Simple section heading between grouped panels |
-| `OpenWorldGlobe` | `src/lib/components/OpenWorldGlobe.svelte` | Cesium globe component with interactive markers and camera focus |
+| `OpenWorldGlobe` | `src/lib/components/OpenWorldGlobe.svelte` | Cesium globe component with interactive news markers, AIS vessel overlays, and camera focus |
 | `AreaWordCloud` | `src/lib/components/AreaWordCloud.svelte` | ECharts wordcloud renderer for selected area context |
 | `NewsFeedCard` | `src/lib/components/NewsFeedCard.svelte` | Clickable news card with source/title/link/summary/location/keyword/model metadata |
 

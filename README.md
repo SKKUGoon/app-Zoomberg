@@ -96,3 +96,4 @@ news_cleaner_flow(batch_size=20, model="gpt-5-nano")
 - Cross-city relations are stored in `mart.map__news_relationship`.
 - Agent outputs are stored in `agent_trace` for audit/debug.
 - A one-time historical backfill script is available at `scripts/backfill_news_distiller.py`.
+- AIS Stream live map overlay is currently deferred and should be implemented/re-enabled when AIS Stream service maturity and coverage improve (`https://aisstream.io/coverage`).

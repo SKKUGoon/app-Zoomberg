@@ -11,6 +11,7 @@ Build and maintain a SvelteKit-based map + settings console that visualizes geo-
 - App root is this repository root (no nested `web/` project).
 - Frontend and backend run in one SvelteKit app.
 - High-level product plan is documented in `README.md`.
+- AIS Stream integration is intentionally deferred for UI use until service maturity/coverage improves (`https://aisstream.io/coverage`). Keep existing AIS server scaffolding non-primary and treat re-enable as future work.
 
 ## Tech Stack
 

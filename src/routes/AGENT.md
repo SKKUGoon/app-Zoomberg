@@ -10,6 +10,7 @@ This document explains route responsibilities and which reusable components must
 | `/map` | `src/routes/map/+page.svelte` | Cesium globe + postgres-backed live news feed with selectable polling cadence |
 | `/settings` | `src/routes/settings/+page.svelte` | News pipeline configuration reference |
 | `/api/news` | `src/routes/api/news/+server.ts` | REST-polled paged news feed endpoint (50/page) reading `mart.fact__news` joined to `mart.dim__city` via Drizzle ORM |
+| `/api/ais/live` | `src/routes/api/ais/live/+server.ts` | Server-sent event stream that proxies AIS websocket vessel updates for map overlays |
 
 ## Required Component Usage
 

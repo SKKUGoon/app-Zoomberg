@@ -193,6 +193,7 @@
 		relationshipEntities.clear();
 	};
 
+
 	const renderRelationshipOverlay = () => {
 		if (!viewer || !cesium) {
 			return;
@@ -625,7 +626,9 @@
 				viewer = new c.Viewer(globeContainer, {
 					animation: false,
 					timeline: false,
+					baseLayer: false,
 					baseLayerPicker: false,
+					terrainProvider: new c.EllipsoidTerrainProvider(),
 					fullscreenButton: false,
 					homeButton: false,
 					sceneModePicker: false,
