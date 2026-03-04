@@ -22,6 +22,7 @@ export class NewsFeedState {
 	selectedNewsId = $state<number | null>(null);
 	newsFocusTarget = $state<GlobeFocusTarget | null>(null);
 	minPublishedIso = $state<string | null>(null);
+	maxPublishedIso = $state<string | null>(null);
 	windowStartMs = $state<number | null>(null);
 	windowEndMs = $state<number | null>(null);
 	feedPage = $state(1);
@@ -66,6 +67,7 @@ export class NewsFeedState {
 			this.lastPolledAt = payload.polled_at;
 			this.totalItems = payload.total_items;
 			this.minPublishedIso = payload.min_published_time;
+			this.maxPublishedIso = payload.max_published_time;
 
 			if (payload.window_start) {
 				this.windowStartMs = new Date(payload.window_start).getTime();
@@ -114,12 +116,12 @@ export class NewsFeedState {
 	}
 
 	updateTimeWindowStart(nextStart: number) {
-		if (this.minPublishedIso === null || !this.lastPolledAt) {
+		if (this.minPublishedIso === null || this.maxPublishedIso === null) {
 			return;
 		}
 
 		const minMs = new Date(this.minPublishedIso).getTime();
-		const maxMs = new Date(this.lastPolledAt).getTime();
+		const maxMs = new Date(this.maxPublishedIso).getTime();
 		const windowMs = Math.min(this.maxWindowMs, Math.max(0, maxMs - minMs));
 		const latestStart = Math.max(minMs, maxMs - windowMs);
 		const boundedStart = Math.min(Math.max(nextStart, minMs), latestStart);

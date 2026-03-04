@@ -482,6 +482,7 @@
 		}
 
 		syncSelection();
+		viewer.scene.requestRender();
 	};
 
 	const syncSelection = () => {
@@ -576,12 +577,14 @@
 		if (!selectedMarkerId) {
 			viewer.selectedEntity = undefined;
 		}
+
+		viewer.scene.requestRender();
 	};
 
 	const selectedMarker = $derived(markers.find((marker: MapMarker) => marker.id === selectedMarkerId) ?? null);
 
 	$effect(() => {
-		void markers.length;
+		void markers;
 		renderMarkers();
 	});
 

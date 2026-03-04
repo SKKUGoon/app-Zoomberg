@@ -327,8 +327,6 @@
 			<section class="title-overlay">
 				<p class="eyebrow">Globe</p>
 				<h1>Global Context and Event Console</h1>
-				<p>Showing geolocated market-related news ordered by published time. Time window supports up to 48 hours.</p>
-				<p>TODO: AIS live stream overlay is temporarily disabled and will be revisited when AIS Stream coverage is more mature: https://aisstream.io/coverage</p>
 			</section>
 
 			<FeedOverlayPanel
@@ -346,7 +344,7 @@
 				feedRowCount={newsFeedState.feed.length}
 				totalItems={newsFeedState.totalItems}
 				minMs={newsFeedState.minPublishedIso ? new Date(newsFeedState.minPublishedIso).getTime() : null}
-				maxMs={newsFeedState.lastPolledAt ? new Date(newsFeedState.lastPolledAt).getTime() : null}
+				maxMs={newsFeedState.maxPublishedIso ? new Date(newsFeedState.maxPublishedIso).getTime() : null}
 				startMs={newsFeedState.windowStartMs}
 				maxWindowMs={MAX_WINDOW_MS}
 				onTimeWindowChange={onTimeWindowChange}

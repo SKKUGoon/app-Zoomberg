@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from '@sveltejs/kit';
-import { and, asc, count, desc, eq, gte, inArray, lte, min } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, lte, max, min } from 'drizzle-orm';
 import { db } from '$lib/server/db/client';
 import { dimCity, factDistilledNews, mapNewsCities, mapNewsRelationship } from '$lib/server/db/schema';
 
@@ -10,6 +10,7 @@ const MAX_WINDOW_MS = MAX_WINDOW_HOURS * 60 * 60 * 1000;
 
 type TimeBounds = {
 	min: Date | null;
+	max: Date | null;
 };
 
 type RelationType = 'Assault' | 'Cooperate' | 'Independent';
@@ -23,12 +24,14 @@ const getPublishedBounds = async (): Promise<TimeBounds> => {
 
 	const [row] = await db
 		.select({
-			minPublished: min(factDistilledNews.timePublished)
+			minPublished: min(factDistilledNews.timePublished),
+			maxPublished: max(factDistilledNews.timePublished)
 		})
 		.from(factDistilledNews);
 
 	cachedBounds = {
-		min: row?.minPublished ?? null
+		min: row?.minPublished ?? null,
+		max: row?.maxPublished ?? null
 	};
 
 	return cachedBounds;
@@ -36,7 +39,7 @@ const getPublishedBounds = async (): Promise<TimeBounds> => {
 
 const clampWindowToBounds = (requestedStart: Date, requestedEnd: Date, bounds: TimeBounds) => {
 	const minBound = bounds.min;
-	const maxBound = new Date();
+	const maxBound = bounds.max ?? new Date();
 
 	if (!minBound) {
 		return {
@@ -83,7 +86,7 @@ const parseRequestedWindow = (url: URL, bounds: TimeBounds) => {
 	const startParam = url.searchParams.get('start');
 	const endParam = url.searchParams.get('end');
 
-	const fallbackEnd = new Date();
+	const fallbackEnd = bounds.max ?? new Date();
 	const fallbackStart = new Date(fallbackEnd.getTime() - DEFAULT_WINDOW_HOURS * 60 * 60 * 1000);
 
 	const requestedStart = startParam ? new Date(startParam) : fallbackStart;
@@ -198,6 +201,7 @@ export const GET: RequestHandler = async ({ url }) => {
 			window_start: start.toISOString(),
 			window_end: end.toISOString(),
 			min_published_time: bounds.min?.toISOString() ?? null,
+			max_published_time: bounds.max?.toISOString() ?? null,
 			page: 1,
 			page_size: items.length,
 			total_items: totalItems,
@@ -212,6 +216,7 @@ export const GET: RequestHandler = async ({ url }) => {
 				window_start: null,
 				window_end: null,
 				min_published_time: null,
+				max_published_time: null,
 				error: 'Unable to fetch news from postgres',
 				page: 1,
 				page_size: 0,

@@ -4,6 +4,7 @@ export type NewsPayload = {
 	window_start: string | null;
 	window_end: string | null;
 	min_published_time: string | null;
+	max_published_time: string | null;
 	page: number;
 	page_size: number;
 	total_items: number;
