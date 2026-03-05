@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { MAP_NAV_CHILDREN } from '$lib/constants/mapViews';
 
 	type NavChild = {
 		label: string;
@@ -18,11 +19,7 @@
 			label: 'Map',
 			href: '/map/global',
 			icon: 'map',
-			children: [
-				{ label: 'Global Context', href: '/map/global' },
-				{ label: 'South Korea Real Estate (WIP)', href: '/map/korea_estate' },
-				{ label: 'Tokyo Real Estate (WIP)', href: '/map/tokyo_estate' }
-			]
+			children: MAP_NAV_CHILDREN
 		},
 		{ label: 'Settings', href: '/settings', icon: 'build' }
 	];
