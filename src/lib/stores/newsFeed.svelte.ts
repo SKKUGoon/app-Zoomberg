@@ -1,4 +1,6 @@
 import type { GlobeFocusTarget, NewsCard, NewsPayload } from '$lib/types/news';
+import { DEFAULT_FEED_PAGE_SIZE, DEFAULT_POLLING_MS } from '$lib/constants/newsFeed';
+import { MAX_WINDOW_MS } from '$lib/constants/newsWindow';
 
 type NewsFeedStateOptions = {
 	maxWindowMs?: number;
@@ -7,9 +9,7 @@ type NewsFeedStateOptions = {
 	endpointPath?: string;
 };
 
-const DEFAULT_MAX_WINDOW_MS = 48 * 60 * 60 * 1000;
-const DEFAULT_POLLING_MS = 60_000;
-const DEFAULT_FEED_PAGE_SIZE = 10;
+const DEFAULT_MAX_WINDOW_MS = MAX_WINDOW_MS;
 
 export class NewsFeedState {
 	feed = $state<NewsCard[]>([]);

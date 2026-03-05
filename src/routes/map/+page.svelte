@@ -6,7 +6,14 @@
 	import EmptyFeedLikePanel from '$lib/components/map/EmptyFeedLikePanel.svelte';
 	import MapLegend from '$lib/components/map/MapLegend.svelte';
 	import MapTicker from '$lib/components/map/MapTicker.svelte';
+	import { POLLING_OPTIONS } from '$lib/constants/newsFeed';
+	import { MAX_WINDOW_MS } from '$lib/constants/newsWindow';
 	import { buildMapMarkers, formatLocation, getNumericCoords } from '$lib/domain/markerBuilder';
+	import { formatLocationsForCard, summarizeRelationship } from '$lib/domain/mapFeedFormatters';
+	import {
+		buildSelectedMarkerRelationshipOverlay,
+		buildSelectedNewsRelationshipOverlay
+	} from '$lib/domain/relationshipOverlayBuilder';
 	import { NewsFeedState } from '$lib/stores/newsFeed.svelte';
 	import {
 		CURRENCY_GREEN,
@@ -25,30 +32,13 @@
 	} from '$lib/domain/themeTaxonomy';
 	import type { GlobeFocusTarget, GlobeRelationshipOverlay, MapMarker, NewsCard, NewsCity } from '$lib/types/news';
 
-	type RelationshipLink = {
-		fromCityId: string;
-		toCityId: string;
-		fromLatitude: number;
-		fromLongitude: number;
-		toLatitude: number;
-		toLongitude: number;
-		color: string;
-		relationType: 'Assault' | 'Cooperate' | 'Independent';
-		relationNote: string | null;
-	};
-
-	const MAX_WINDOW_MS = 48 * 60 * 60 * 1000;
 	const newsFeedState = new NewsFeedState({
 		maxWindowMs: MAX_WINDOW_MS,
 		initialPollingMs: 60_000,
 		feedPageSize: 10
 	});
 
-	const pollingOptions = [
-		{ label: '1 minute', value: 60_000 },
-		{ label: '5 minutes', value: 300_000 },
-		{ label: '10 minutes', value: 600_000 }
-	] as const;
+	const pollingOptions = [...POLLING_OPTIONS];
 
 	type PanelMode = 'full' | 'summary' | 'minimized';
 	let liveNewsPanelMode = $state<PanelMode>('summary');
@@ -111,27 +101,6 @@
 			month: 'short',
 			day: '2-digit'
 		}).format(date);
-	};
-
-	const formatLocationsForCard = (cities: NewsCity[]) => {
-		if (cities.length === 0) {
-			return 'Location unavailable';
-		}
-		if (cities.length === 1) {
-			return formatLocation(cities[0].city, cities[0].country);
-		}
-
-		const first = formatLocation(cities[0].city, cities[0].country);
-		return `${first} +${cities.length - 1} more`;
-	};
-
-	const summarizeRelationship = (item: NewsCard): string | null => {
-		if (item.relationships.length === 0) {
-			return null;
-		}
-
-		const uniqueTypes = [...new Set(item.relationships.map((entry) => entry.relation_type))];
-		return uniqueTypes.join(', ');
 	};
 
 	const focusTargetForNews = (item: NewsCard): GlobeFocusTarget | null => {
@@ -217,232 +186,13 @@
 	);
 	const selectedMarker = $derived(mapMarkers.find((marker) => marker.id === newsFeedState.selectedMarkerId) ?? null);
 
-	const selectedNewsRelationship = $derived.by<GlobeRelationshipOverlay | null>(() => {
-		if (!selectedNews || selectedNews.cities.length < 2) {
-			return null;
-		}
+	const selectedNewsRelationship = $derived.by<GlobeRelationshipOverlay | null>(() =>
+		buildSelectedNewsRelationshipOverlay(selectedNews)
+	);
 
-		const BLUE = '#2ac6ff';
-		const GREEN = '#45ff95';
-		const RED = '#ff4d4d';
-
-		const cityCoordMap = new Map<string, { latitude: number; longitude: number }>();
-		for (const city of selectedNews.cities) {
-			const coords = getNumericCoords(city);
-			if (!coords) {
-				continue;
-			}
-			cityCoordMap.set(city.city_id, { latitude: coords.lat, longitude: coords.lon });
-		}
-
-		if (cityCoordMap.size < 2) {
-			return null;
-		}
-
-		const highlights = new Map<string, GlobeRelationshipOverlay['highlights'][number]>();
-		const links = new Map<string, RelationshipLink>();
-
-		const addHighlight = (cityId: string, color: string) => {
-			const coords = cityCoordMap.get(cityId);
-			if (!coords) {
-				return;
-			}
-			highlights.set(`${cityId}:${color}`, {
-				cityId,
-				latitude: coords.latitude,
-				longitude: coords.longitude,
-				color
-			});
-		};
-
-		const addLink = (fromCityId: string, toCityId: string, color: string) => {
-			const from = cityCoordMap.get(fromCityId);
-			const to = cityCoordMap.get(toCityId);
-			if (!from || !to) {
-				return;
-			}
-			const key = `${fromCityId}:${toCityId}:${color}`;
-			const existing = links.get(key);
-			if (existing) {
-				return;
-			}
-			links.set(key, {
-				fromCityId,
-				toCityId,
-				fromLatitude: from.latitude,
-				fromLongitude: from.longitude,
-				toLatitude: to.latitude,
-				toLongitude: to.longitude,
-				color,
-				relationType: 'Independent',
-				relationNote: null
-			});
-		};
-
-		if (selectedNews.relationships.length === 0) {
-			for (const cityId of cityCoordMap.keys()) {
-				addHighlight(cityId, BLUE);
-			}
-			return {
-				highlights: [...highlights.values()],
-				links: []
-			};
-		}
-
-		for (const relation of selectedNews.relationships) {
-			if (relation.relation_type === 'Independent') {
-				addHighlight(relation.from_city_id, BLUE);
-				addHighlight(relation.to_city_id, BLUE);
-				continue;
-			}
-
-			const color = relation.relation_type === 'Cooperate' ? GREEN : RED;
-			addHighlight(relation.from_city_id, color);
-			addHighlight(relation.to_city_id, color);
-			const key = `${relation.from_city_id}:${relation.to_city_id}:${color}`;
-			const existing = links.get(key);
-			const note = relation.relation_note?.trim() ? relation.relation_note.trim() : null;
-			if (existing) {
-				if (!existing.relationNote && note) {
-					existing.relationNote = note;
-				} else if (existing.relationNote && note && existing.relationNote !== note && !existing.relationNote.endsWith(' (more)')) {
-					existing.relationNote = `${existing.relationNote} (more)`;
-				}
-				continue;
-			}
-			addLink(relation.from_city_id, relation.to_city_id, color);
-			const created = links.get(key);
-			if (created) {
-				created.relationType = relation.relation_type;
-				created.relationNote = note;
-			}
-		}
-
-		return {
-			highlights: [...highlights.values()],
-			links: [...links.values()]
-		};
-	});
-
-	const selectedMarkerRelationship = $derived.by<GlobeRelationshipOverlay | null>(() => {
-		if (!selectedMarker) {
-			return null;
-		}
-
-		const BLUE = '#2ac6ff';
-		const GREEN = '#45ff95';
-		const RED = '#ff4d4d';
-		const selectedArticleIds = new Set(selectedMarker.articleIds);
-		const markerItems = newsFeedState.feed.filter((item) => selectedArticleIds.has(String(item.id)));
-		if (markerItems.length === 0) {
-			return null;
-		}
-
-		const highlights = new Map<string, GlobeRelationshipOverlay['highlights'][number]>();
-		const links = new Map<string, RelationshipLink>();
-		const cityCoordMap = new Map<string, { latitude: number; longitude: number }>();
-
-		const addHighlight = (cityId: string, color: string) => {
-			const coords = cityCoordMap.get(cityId);
-			if (!coords) {
-				return;
-			}
-			highlights.set(`${cityId}:${color}`, {
-				cityId,
-				latitude: coords.latitude,
-				longitude: coords.longitude,
-				color
-			});
-		};
-
-		const addLink = (
-			fromCityId: string,
-			toCityId: string,
-			color: string,
-			relationType: RelationshipLink['relationType'],
-			relationNote: string | null
-		) => {
-			const from = cityCoordMap.get(fromCityId);
-			const to = cityCoordMap.get(toCityId);
-			if (!from || !to) {
-				return;
-			}
-			const key = `${fromCityId}:${toCityId}:${color}`;
-			const existing = links.get(key);
-			const note = relationNote?.trim() ? relationNote.trim() : null;
-			if (existing) {
-				if (!existing.relationNote && note) {
-					existing.relationNote = note;
-				} else if (existing.relationNote && note && existing.relationNote !== note && !existing.relationNote.endsWith(' (more)')) {
-					existing.relationNote = `${existing.relationNote} (more)`;
-				}
-				return;
-			}
-			links.set(key, {
-				fromCityId,
-				toCityId,
-				fromLatitude: from.latitude,
-				fromLongitude: from.longitude,
-				toLatitude: to.latitude,
-				toLongitude: to.longitude,
-				color,
-				relationType,
-				relationNote: note
-			});
-		};
-
-		cityCoordMap.set(selectedMarker.cityId, {
-			latitude: selectedMarker.latitude,
-			longitude: selectedMarker.longitude
-		});
-
-		for (const item of markerItems) {
-			for (const city of item.cities) {
-				const coords = getNumericCoords(city);
-				if (!coords) {
-					continue;
-				}
-				cityCoordMap.set(city.city_id, { latitude: coords.lat, longitude: coords.lon });
-			}
-		}
-
-		if (cityCoordMap.size < 1) {
-			return null;
-		}
-
-		addHighlight(selectedMarker.cityId, BLUE);
-
-		for (const item of markerItems) {
-			for (const relation of item.relationships) {
-				if (relation.from_city_id !== selectedMarker.cityId) {
-					continue;
-				}
-				if (!cityCoordMap.has(relation.to_city_id)) {
-					continue;
-				}
-
-				if (relation.relation_type === 'Independent') {
-					addHighlight(relation.to_city_id, BLUE);
-					continue;
-				}
-
-				const color = relation.relation_type === 'Cooperate' ? GREEN : RED;
-				addHighlight(relation.to_city_id, color);
-				addLink(
-					relation.from_city_id,
-					relation.to_city_id,
-					color,
-					relation.relation_type,
-					relation.relation_note
-				);
-			}
-		}
-
-		return {
-			highlights: [...highlights.values()],
-			links: [...links.values()]
-		};
-	});
+	const selectedMarkerRelationship = $derived.by<GlobeRelationshipOverlay | null>(() =>
+		buildSelectedMarkerRelationshipOverlay(selectedMarker, newsFeedState.feed)
+	);
 
 	const activeRelationshipOverlay = $derived.by<GlobeRelationshipOverlay | null>(() => {
 		if (selectedMarkerRelationship) {

@@ -97,3 +97,9 @@ news_cleaner_flow(batch_size=20, model="gpt-5-nano")
 - Agent outputs are stored in `agent_trace` for audit/debug.
 - A one-time historical backfill script is available at `scripts/backfill_news_distiller.py`.
 - AIS Stream live map overlay is currently deferred and should be implemented/re-enabled when AIS Stream service maturity and coverage improve (`https://aisstream.io/coverage`).
+
+## Frontend Maintainability
+
+- Shared frontend constants are centralized in `src/lib/constants` (news window/polling, relationship colors, globe interaction tuning).
+- `/map` relationship overlay construction is centralized in `src/lib/domain/relationshipOverlayBuilder.ts`.
+- Globe icon/theme and camera math are extracted to `src/lib/domain/globe/*` so `OpenWorldGlobe.svelte` stays focused on Cesium lifecycle and rendering orchestration.

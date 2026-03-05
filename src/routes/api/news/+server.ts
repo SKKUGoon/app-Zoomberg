@@ -3,10 +3,8 @@ import type { RequestHandler } from '@sveltejs/kit';
 import { and, asc, count, desc, eq, gte, inArray, lte, max, min } from 'drizzle-orm';
 import { db } from '$lib/server/db/client';
 import { dimCity, factDistilledNews, mapNewsCities, mapNewsRelationship } from '$lib/server/db/schema';
+import { DEFAULT_WINDOW_HOURS, HOUR_MS, MAX_WINDOW_MS } from '$lib/constants/newsWindow';
 
-const DEFAULT_WINDOW_HOURS = 24;
-const MAX_WINDOW_HOURS = 48;
-const MAX_WINDOW_MS = MAX_WINDOW_HOURS * 60 * 60 * 1000;
 
 type TimeBounds = {
 	min: Date | null;
@@ -46,7 +44,7 @@ const clampWindowToBounds = (requestedStart: Date, requestedEnd: Date, bounds: T
 	const maxMs = maxBound.getTime();
 
 	if (Number.isNaN(startMs)) {
-		startMs = Math.max(minMs, maxMs - DEFAULT_WINDOW_HOURS * 60 * 60 * 1000);
+		startMs = Math.max(minMs, maxMs - DEFAULT_WINDOW_HOURS * HOUR_MS);
 	}
 
 	if (Number.isNaN(endMs)) {
@@ -79,7 +77,7 @@ const parseRequestedWindow = (url: URL, bounds: TimeBounds) => {
 	const endParam = url.searchParams.get('end');
 
 	const fallbackEnd = bounds.max ?? new Date();
-	const fallbackStart = new Date(fallbackEnd.getTime() - DEFAULT_WINDOW_HOURS * 60 * 60 * 1000);
+	const fallbackStart = new Date(fallbackEnd.getTime() - DEFAULT_WINDOW_HOURS * HOUR_MS);
 
 	const requestedStart = startParam ? new Date(startParam) : fallbackStart;
 	const requestedEnd = endParam ? new Date(endParam) : fallbackEnd;

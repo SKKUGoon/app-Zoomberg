@@ -19,6 +19,8 @@ Avoid duplicate UI implementation across routes. Reuse these components first be
 | `ThemeMixPieChart` | `src/lib/components/ThemeMixPieChart.svelte` | Reusable Bloomberg-styled Apache ECharts pie chart for theme mix composition |
 | `MarkerInfoHoverPanel` | `src/lib/components/MarkerInfoHoverPanel.svelte` | Hover-only marker info panel showing area name, theme-mix pie chart, and word cloud |
 | `NewsFeedCard` | `src/lib/components/NewsFeedCard.svelte` | Clickable news card with source/title/link/summary/location/keyword/model metadata |
+| `GlobeHoverPopup` | `src/lib/components/map/GlobeHoverPopup.svelte` | Globe hover popup container that hosts marker hover details |
+| `GlobeErrorToast` | `src/lib/components/map/GlobeErrorToast.svelte` | Globe-local initialization error toast surface |
 
 ## Reuse Rules
 

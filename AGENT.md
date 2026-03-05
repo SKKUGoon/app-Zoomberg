@@ -71,6 +71,7 @@ The navigation menu has three canonical display states that future changes must 
 - Add comments only when behavior is non-obvious.
 - Prefer pure utility functions for metric calculations.
 - Keep panel purpose aligned with one structural question.
+- Shared map/news/globe constants must live in `src/lib/constants/*.ts`; avoid re-declaring literals across routes/components.
 
 ## Development Commands
 

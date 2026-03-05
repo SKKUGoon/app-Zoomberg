@@ -53,6 +53,12 @@ Route files should prefer these shared components from `src/lib/components`:
 
 Do not duplicate card/header/chart scaffolding directly in route files if a shared component exists. Extend the component API first, then reuse it.
 
+## Map Route Refactor Boundary
+
+- `src/routes/map/+page.svelte` should remain an orchestration layer (state wiring, events, derived composition).
+- Relationship-overlay construction belongs in `src/lib/domain/relationshipOverlayBuilder.ts`.
+- Feed label/summary formatting belongs in `src/lib/domain/mapFeedFormatters.ts`.
+
 ## Update Policy (Required)
 
 Whenever route structure or component usage changes:

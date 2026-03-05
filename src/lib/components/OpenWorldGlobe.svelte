@@ -8,25 +8,30 @@
 		ScreenSpaceEventHandler,
 		Viewer
 	} from 'cesium';
-	import MarkerInfoHoverPanel from '$lib/components/MarkerInfoHoverPanel.svelte';
+	import GlobeErrorToast from '$lib/components/map/GlobeErrorToast.svelte';
+	import GlobeHoverPopup from '$lib/components/map/GlobeHoverPopup.svelte';
 	import {
-		CURRENCY_GREEN,
-		CURRENCY_GREEN_SELECTED,
-		DEVELOPED_STOCKS_BLUE,
-		DEVELOPED_STOCKS_BLUE_SELECTED,
-		EMERGING_STOCKS_ORANGE,
-		EMERGING_STOCKS_ORANGE_SELECTED,
-		isBondTheme,
-		isCommodityTheme,
-		isCurrencyAssetTheme,
-		isDevelopedStocksTheme,
-		isEmergingStocksTheme,
-		isEventsTheme,
-		isGoldTheme,
-		isOilAssetTheme,
-		isPolicyTheme,
-		isRealEstateTheme
-	} from '$lib/domain/themeTaxonomy';
+		HOVER_HIDE_DELAY_MS,
+		HOVER_SHOW_DELAY_MS,
+		MAX_ZOOM,
+		MIN_ZOOM,
+		POPUP_LAYOUT,
+		SIDEBAR_COMPENSATION_FACTOR,
+		SIDEBAR_COMPENSATION_MAX_METERS,
+		SIDEBAR_COMPENSATION_MIN_METERS,
+		ZOOM_HEIGHT_SCALE
+	} from '$lib/constants/globe';
+	import {
+		getMarkerThemeFlags,
+		markerColorHex,
+		markerIconDataUrl,
+		markerSize
+	} from '$lib/domain/globe/markerStyling';
+	import {
+		approximateZoomFromHeight,
+		heightFromApproximateZoom,
+		longitudeOffsetFromMeters
+	} from '$lib/domain/globe/camera';
 	import type { GlobeFocusTarget, GlobeRelationshipOverlay, MapMarker } from '$lib/types/news';
 
 	type CesiumModule = typeof import('cesium');
@@ -60,21 +65,7 @@
 	let popupStyle = $state('opacity: 0; pointer-events: none;');
 	let hoverShowTimer: number | null = null;
 	let hoverHideTimer: number | null = null;
-	const HOVER_SHOW_DELAY_MS = 180;
-	const HOVER_HIDE_DELAY_MS = 120;
-	const MIN_ZOOM = 2.6;
-	const MAX_ZOOM = 6;
-	const ZOOM_HEIGHT_SCALE = 70_000_000;
-	const SIDEBAR_COMPENSATION_FACTOR = 0.38;
-	const SIDEBAR_COMPENSATION_MIN_METERS = 120_000;
-	const SIDEBAR_COMPENSATION_MAX_METERS = 560_000;
 
-	const longitudeOffsetFromMeters = (meters: number, latitude: number) => {
-		const metersPerDegreeLon = Math.max(22_264, 111_320 * Math.cos((latitude * Math.PI) / 180));
-		return meters / metersPerDegreeLon;
-	};
-
-	const markerSize = (count: number) => Math.min(18, 7 + Math.sqrt(Math.max(1, count)) * 2.4);
 	const relationGlowColorForMarker = (marker: MapMarker): string | null => {
 		if (!newsRelationshipOverlay || !marker.cityId) {
 			return null;
@@ -85,78 +76,7 @@
 		return highlight?.color ?? null;
 	};
 
-	const oilBarrelIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
-		const glowBackdrop = glowColor
-			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
-			: '';
-		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
-		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="M160-120q-17 0-28.5-11.5T120-160q0-17 11.5-28.5T160-200h40v-240h-40q-17 0-28.5-11.5T120-480q0-17 11.5-28.5T160-520h40v-240h-40q-17 0-28.5-11.5T120-800q0-17 11.5-28.5T160-840h640q17 0 28.5 11.5T840-800q0 17-11.5 28.5T800-760h-40v240h40q17 0 28.5 11.5T840-480q0 17-11.5 28.5T800-440h-40v240h40q17 0 28.5 11.5T840-160q0 17-11.5 28.5T800-120H160Zm120-80h400v-240q-17 0-28.5-11.5T640-480q0-17 11.5-28.5T680-520v-240H280v240q17 0 28.5 11.5T320-480q0 17-11.5 28.5T280-440v240Zm285-154.5q35-34.5 35-83.5 0-39-22.5-67T480-620q-75 86-97.5 114.5T360-438q0 49 35 83.5t85 34.5q50 0 85-34.5ZM280-200v-560 560Z"/></svg>`;
-		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-	};
-	const currencyIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
-		const glowBackdrop = glowColor
-			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
-			: '';
-		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
-		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="M600-320h160v-160h-60v100H600v60Zm-120-40q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM200-480h60v-100h100v-60H200v160ZM80-200v-560h800v560H80Zm80-80h640v-400H160v400Zm0 0v-400 400Z"/></svg>`;
-		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-	};
-	const stocksIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
-		const glowBackdrop = glowColor
-			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
-			: '';
-		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
-		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="M200-280v-280h80v280h-80Zm240 0v-280h80v280h-80ZM80-120v-80h800v80H80Zm600-160v-280h80v280h-80ZM80-640v-80l400-200 400 200v80H80Zm178-80h444-444Zm0 0h444L480-830 258-720Z"/></svg>`;
-		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-	};
-	const realEstateIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
-		const glowBackdrop = glowColor
-			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
-			: '';
-		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
-		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="M120-120v-560h160v-160h400v320h160v400H520v-160h-80v160H120Zm80-80h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 320h80v-80h-80v80Zm0-160h80v-80h-80v80Zm0-160h80v-80h-80v80Zm160 480h80v-80h-80v80Zm0-160h80v-80h-80v80Z"/></svg>`;
-		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-	};
-	const policyIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
-		const glowBackdrop = glowColor
-			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
-			: '';
-		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
-		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="M160-120v-80h480v80H160Zm226-194L160-540l84-86 228 226-86 86Zm254-254L414-796l86-84 226 226-86 86Zm184 408L302-682l56-56 522 522-56 56Z"/></svg>`;
-		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-	};
-	const bondIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
-		const glowBackdrop = glowColor
-			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
-			: '';
-		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
-		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="M336-120q-91 0-153.5-62.5T120-336q0-38 13-74t37-65l142-171-97-194h530l-97 194 142 171q24 29 37 65t13 74q0 91-63 153.5T624-120H336Zm144-200q-33 0-56.5-23.5T400-400q0-33 23.5-56.5T480-480q33 0 56.5 23.5T560-400q0 33-23.5 56.5T480-320Zm-95-360h190l40-80H345l40 80Zm-49 480h288q57 0 96.5-39.5T760-336q0-24-8.5-46.5T728-423L581-600H380L232-424q-15 18-23.5 41t-8.5 47q0 57 39.5 96.5T336-200Z"/></svg>`;
-		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-	};
-	const commodityIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
-		const glowBackdrop = glowColor
-			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
-			: '';
-		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
-		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="M480-120 80-600l120-240h560l120 240-400 480Zm-95-520h190l-60-120h-70l-60 120Zm55 347v-267H218l222 267Zm80 0 222-267H520v267Zm144-347h106l-60-120H604l60 120Zm-474 0h106l60-120H250l-60 120Z"/></svg>`;
-		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-	};
-	const eventsIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
-		const glowBackdrop = glowColor
-			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
-			: '';
-		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
-		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="m480-281 59-59h81v-81l59-59-59-59v-81h-81l-59-59-59 59h-81v81l-59 59 59 59v81h81l59 59Zm0 253L346-160H160v-186L28-480l132-134v-186h186l134-132 134 132h186v186l132 134-132 134v186H614L480-28Zm0-112 100-100h140v-140l100-100-100-100v-140H580L480-820 380-720H240v140L140-480l100 100v140h140l100 100Zm0-340Z"/></svg>`;
-		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-	};
-	const goldIconDataUrl = (fillColor: string, glowColor: string | null = null) => {
-		const glowBackdrop = glowColor
-			? `<circle cx="480" cy="-480" r="335" fill="${glowColor}" fill-opacity="0.22"/><circle cx="480" cy="-480" r="300" fill="${glowColor}" fill-opacity="0.12"/>`
-			: '';
-		const glowStroke = glowColor ? ` stroke="${glowColor}" stroke-width="30" stroke-linejoin="round" stroke-opacity="0.55"` : '';
-		const svg = `<svg xmlns="http://www.w3.org/2000/svg" height="44" viewBox="0 -960 960 960" width="44">${glowBackdrop}<path fill="${fillColor}"${glowStroke} d="M852-212 732-332l56-56 120 120-56 56ZM708-692l-56-56 120-120 56 56-120 120Zm-456 0L132-812l56-56 120 120-56 56ZM108-212l-56-56 120-120 56 56-120 120Zm246-75 126-76 126 77-33-144 111-96-146-13-58-136-58 135-146 13 111 97-33 143ZM233-120l65-281L80-590l288-25 112-265 112 265 288 25-218 189 65 281-247-149-247 149Zm247-361Z"/></svg>`;
-		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-	};
+	
 
 	const toColor = (value: string, fallback: string): Color | null => {
 		if (!cesium) {
@@ -364,20 +284,18 @@
 		return;
 	}
 
-		const targetHeight = ZOOM_HEIGHT_SCALE / 2 ** MAX_ZOOM;
+		const targetHeight = heightFromApproximateZoom(MAX_ZOOM, ZOOM_HEIGHT_SCALE);
 		const offsetMeters = Math.max(
 			SIDEBAR_COMPENSATION_MIN_METERS,
 			Math.min(SIDEBAR_COMPENSATION_MAX_METERS, targetHeight * SIDEBAR_COMPENSATION_FACTOR)
 		);
-	const offsetLongitude = focusTarget.longitude + longitudeOffsetFromMeters(offsetMeters, focusTarget.latitude);
+		const offsetLongitude =
+			focusTarget.longitude + longitudeOffsetFromMeters(offsetMeters, focusTarget.latitude);
 		viewer.camera.flyTo({
-		destination: cesium.Cartesian3.fromDegrees(offsetLongitude, focusTarget.latitude, targetHeight),
+			destination: cesium.Cartesian3.fromDegrees(offsetLongitude, focusTarget.latitude, targetHeight),
 			duration: 1.05
 		});
 	};
-
-	const approximateZoomFromHeight = (heightMeters: number) => Math.max(0, Math.log2(ZOOM_HEIGHT_SCALE / heightMeters));
-	const heightFromApproximateZoom = (zoom: number) => ZOOM_HEIGHT_SCALE / 2 ** zoom;
 
 	const updatePopupAnchor = () => {
 		if (!viewer || !cesium || !hoveredMarker) {
@@ -394,10 +312,16 @@
 
 		const viewportWidth = window.innerWidth;
 		const viewportHeight = window.innerHeight;
-		const padding = 12;
-		const panelWidth = Math.min(420, Math.max(280, viewportWidth * 0.34));
-		const panelHeight = Math.min(380, Math.max(260, viewportHeight * 0.34));
-		const anchorGap = 20;
+		const padding = POPUP_LAYOUT.padding;
+		const panelWidth = Math.min(
+			POPUP_LAYOUT.maxWidth,
+			Math.max(POPUP_LAYOUT.minWidth, viewportWidth * POPUP_LAYOUT.widthViewportRatio)
+		);
+		const panelHeight = Math.min(
+			POPUP_LAYOUT.maxHeight,
+			Math.max(POPUP_LAYOUT.minHeight, viewportHeight * POPUP_LAYOUT.heightViewportRatio)
+		);
+		const anchorGap = POPUP_LAYOUT.anchorGap;
 
 		let placement: 'left' | 'right' = 'right';
 		let left = screenPoint.x + anchorGap;
@@ -407,7 +331,13 @@
 		}
 
 		left = Math.max(padding, Math.min(viewportWidth - panelWidth - padding, left));
-		const top = Math.max(padding, Math.min(viewportHeight - panelHeight - padding, screenPoint.y - panelHeight * 0.46));
+		const top = Math.max(
+			padding,
+			Math.min(
+				viewportHeight - panelHeight - padding,
+				screenPoint.y - panelHeight * POPUP_LAYOUT.verticalAnchorRatio
+			)
+		);
 
 		popupPlacement = placement;
 		popupStyle = `left: ${Math.round(left)}px; top: ${Math.round(top)}px; opacity: 1; pointer-events: none;`;
@@ -427,84 +357,27 @@
 
 			const colorHex = marker.segments.length > 0 ? marker.segments[0].color : '#f2a93b';
 			const dominantTheme = marker.segments[0]?.label ?? '';
-			const useOilIcon = isOilAssetTheme(dominantTheme);
-			const useCurrencyIcon = isCurrencyAssetTheme(dominantTheme);
-			const useDevelopedStocksIcon = isDevelopedStocksTheme(dominantTheme);
-			const useEmergingStocksIcon = isEmergingStocksTheme(dominantTheme);
-			const useRealEstateIcon = isRealEstateTheme(dominantTheme);
-			const usePolicyIcon = isPolicyTheme(dominantTheme);
-			const useBondIcon = isBondTheme(dominantTheme);
-			const useCommodityIcon = isCommodityTheme(dominantTheme);
-			const useEventsIcon = isEventsTheme(dominantTheme);
-			const useGoldIcon = isGoldTheme(dominantTheme);
-			const useStocksIcon = useDevelopedStocksIcon || useEmergingStocksIcon;
+			const flags = getMarkerThemeFlags(dominantTheme);
 			const baseColor = toColor(colorHex, '#f2a93b') ?? cesium.Color.ORANGE;
 			const activeColor = cesium.Color.fromCssColorString('#f7bf66');
-			const markerColorHex = useCurrencyIcon
-				? marker.id === selectedMarkerId
-					? CURRENCY_GREEN_SELECTED
-					: CURRENCY_GREEN
-				: useDevelopedStocksIcon
-					? marker.id === selectedMarkerId
-						? DEVELOPED_STOCKS_BLUE_SELECTED
-						: DEVELOPED_STOCKS_BLUE
-					: useEmergingStocksIcon
-						? marker.id === selectedMarkerId
-							? EMERGING_STOCKS_ORANGE_SELECTED
-							: EMERGING_STOCKS_ORANGE
-				: marker.id === selectedMarkerId
-					? '#f7bf66'
-					: colorHex;
+			const isActive = marker.id === selectedMarkerId;
+			const themedMarkerColorHex = markerColorHex(flags, isActive, colorHex);
 			const glowColor = relationGlowColorForMarker(marker);
 			const iconSize = Math.round(markerSize(marker.total) + 12);
 
 			const entity = viewer.entities.add({
 				position: cesium.Cartesian3.fromDegrees(marker.longitude, marker.latitude),
-				point:
-					useOilIcon ||
-					useCurrencyIcon ||
-					useStocksIcon ||
-					useRealEstateIcon ||
-					usePolicyIcon ||
-					useBondIcon ||
-					useCommodityIcon ||
-					useEventsIcon ||
-					useGoldIcon
+				point: flags.useAnyIcon
 					? undefined
 					: {
 							pixelSize: markerSize(marker.total),
-							color: marker.id === selectedMarkerId ? activeColor : baseColor,
+							color: isActive ? activeColor : baseColor,
 							outlineColor: cesium.Color.fromCssColorString('#0a0e13'),
-							outlineWidth: marker.id === selectedMarkerId ? 2.4 : 1.4
+							outlineWidth: isActive ? 2.4 : 1.4
 						},
-				billboard:
-					useOilIcon ||
-					useCurrencyIcon ||
-					useStocksIcon ||
-					useRealEstateIcon ||
-					usePolicyIcon ||
-					useBondIcon ||
-					useCommodityIcon ||
-					useEventsIcon ||
-					useGoldIcon
+				billboard: flags.useAnyIcon
 					? {
-							image: useOilIcon
-								? oilBarrelIconDataUrl(markerColorHex, glowColor)
-								: useCurrencyIcon
-									? currencyIconDataUrl(markerColorHex, glowColor)
-									: useStocksIcon
-										? stocksIconDataUrl(markerColorHex, glowColor)
-										: useRealEstateIcon
-											? realEstateIconDataUrl(markerColorHex, glowColor)
-											: usePolicyIcon
-												? policyIconDataUrl(markerColorHex, glowColor)
-												: useBondIcon
-													? bondIconDataUrl(markerColorHex, glowColor)
-													: useCommodityIcon
-														? commodityIconDataUrl(markerColorHex, glowColor)
-														: useEventsIcon
-															? eventsIconDataUrl(markerColorHex, glowColor)
-															: goldIconDataUrl(markerColorHex, glowColor),
+							image: markerIconDataUrl(flags, themedMarkerColorHex, glowColor),
 							width: iconSize,
 							height: iconSize,
 							verticalOrigin: cesium.VerticalOrigin.CENTER
@@ -535,64 +408,17 @@
 			}
 			const isActive = marker.id === selectedMarkerId;
 			const dominantTheme = marker.segments[0]?.label ?? '';
-			const useOilIcon = isOilAssetTheme(dominantTheme);
-			const useCurrencyIcon = isCurrencyAssetTheme(dominantTheme);
-			const useDevelopedStocksIcon = isDevelopedStocksTheme(dominantTheme);
-			const useEmergingStocksIcon = isEmergingStocksTheme(dominantTheme);
-			const useRealEstateIcon = isRealEstateTheme(dominantTheme);
-			const usePolicyIcon = isPolicyTheme(dominantTheme);
-			const useBondIcon = isBondTheme(dominantTheme);
-			const useCommodityIcon = isCommodityTheme(dominantTheme);
-			const useEventsIcon = isEventsTheme(dominantTheme);
-			const useGoldIcon = isGoldTheme(dominantTheme);
-			const useStocksIcon = useDevelopedStocksIcon || useEmergingStocksIcon;
+			const flags = getMarkerThemeFlags(dominantTheme);
 			const glowColor = relationGlowColorForMarker(marker);
 
-			if (
-				(useOilIcon ||
-					useCurrencyIcon ||
-					useStocksIcon ||
-					useRealEstateIcon ||
-					usePolicyIcon ||
-					useBondIcon ||
-					useCommodityIcon ||
-					useEventsIcon ||
-					useGoldIcon) &&
-				entity.billboard
-			) {
-				const markerColorHex = useCurrencyIcon
-					? isActive
-						? CURRENCY_GREEN_SELECTED
-						: CURRENCY_GREEN
-					: useDevelopedStocksIcon
-						? isActive
-							? DEVELOPED_STOCKS_BLUE_SELECTED
-							: DEVELOPED_STOCKS_BLUE
-						: useEmergingStocksIcon
-							? isActive
-								? EMERGING_STOCKS_ORANGE_SELECTED
-								: EMERGING_STOCKS_ORANGE
-					: isActive
-						? '#f7bf66'
-						: marker.segments[0]?.color ?? '#f2a93b';
+			if (flags.useAnyIcon && entity.billboard) {
+				const themedMarkerColorHex = markerColorHex(
+					flags,
+					isActive,
+					marker.segments[0]?.color ?? '#f2a93b'
+				);
 				entity.billboard.image = new cesium.ConstantProperty(
-					useOilIcon
-						? oilBarrelIconDataUrl(markerColorHex, glowColor)
-						: useCurrencyIcon
-							? currencyIconDataUrl(markerColorHex, glowColor)
-							: useStocksIcon
-								? stocksIconDataUrl(markerColorHex, glowColor)
-								: useRealEstateIcon
-									? realEstateIconDataUrl(markerColorHex, glowColor)
-									: usePolicyIcon
-										? policyIconDataUrl(markerColorHex, glowColor)
-										: useBondIcon
-											? bondIconDataUrl(markerColorHex, glowColor)
-											: useCommodityIcon
-												? commodityIconDataUrl(markerColorHex, glowColor)
-												: useEventsIcon
-													? eventsIconDataUrl(markerColorHex, glowColor)
-													: goldIconDataUrl(markerColorHex, glowColor)
+					markerIconDataUrl(flags, themedMarkerColorHex, glowColor)
 				);
 				continue;
 			}
@@ -735,11 +561,21 @@
 				viewer.scene.globe.preloadAncestors = true;
 				viewer.scene.globe.preloadSiblings = true;
 				viewer.scene.globe.loadingDescendantLimit = 64;
-				viewer.scene.screenSpaceCameraController.minimumZoomDistance = heightFromApproximateZoom(MAX_ZOOM);
-				viewer.scene.screenSpaceCameraController.maximumZoomDistance = heightFromApproximateZoom(MIN_ZOOM);
+				viewer.scene.screenSpaceCameraController.minimumZoomDistance = heightFromApproximateZoom(
+					MAX_ZOOM,
+					ZOOM_HEIGHT_SCALE
+				);
+				viewer.scene.screenSpaceCameraController.maximumZoomDistance = heightFromApproximateZoom(
+					MIN_ZOOM,
+					ZOOM_HEIGHT_SCALE
+				);
 
 				viewer.camera.setView({
-					destination: c.Cartesian3.fromDegrees(12, 20, heightFromApproximateZoom(MIN_ZOOM))
+					destination: c.Cartesian3.fromDegrees(
+						12,
+						20,
+						heightFromApproximateZoom(MIN_ZOOM, ZOOM_HEIGHT_SCALE)
+					)
 				});
 				cameraMoveEndHandler = () => {
 					if (!viewer || !cesium) {
@@ -750,7 +586,7 @@
 						return;
 					}
 					const height = cartographic.height;
-					const zoomApprox = approximateZoomFromHeight(height);
+					const zoomApprox = approximateZoomFromHeight(height, ZOOM_HEIGHT_SCALE);
 					console.info('[sphere-globe] zoom approx:', zoomApprox.toFixed(2), '| camera height (m):', Math.round(height));
 					updatePopupAnchor();
 					viewer.scene.requestRender();
@@ -816,15 +652,9 @@
 
 <div bind:this={globeContainer} class="globe-root" role="img" aria-label="Sphere globe map"></div>
 
-{#if hoveredMarker}
-	<div class={`globe-popup globe-popup-${popupPlacement}`} style={popupStyle}>
-		<MarkerInfoHoverPanel marker={hoveredMarker} />
-	</div>
-{/if}
+<GlobeHoverPopup marker={hoveredMarker} placement={popupPlacement} styleText={popupStyle} />
 
-{#if loadError}
-	<div class="globe-error">{loadError}</div>
-{/if}
+<GlobeErrorToast message={loadError} />
 
 <style>
 	.globe-root {
@@ -832,56 +662,6 @@
 		width: 100%;
 		overflow: hidden;
 		background: #000000;
-	}
-
-	.globe-popup {
-		position: absolute;
-		width: clamp(17.5rem, 34vw, 26.25rem);
-		max-height: min(23.75rem, 72vh);
-		overflow: hidden;
-		padding: 0.65rem 0.75rem;
-		border: 1px solid #2a3645;
-		border-radius: 0.5rem;
-		background: linear-gradient(160deg, #0a1119ed, #0f1924de);
-		box-shadow: 0 10px 28px #00000090;
-		color: #dde8f6;
-		z-index: 620;
-		transform: translateZ(0);
-		transition: opacity 140ms ease;
-	}
-
-	.globe-popup-right {
-		border-left: 2px solid #2f6d9f;
-	}
-
-	.globe-popup-left {
-		border-right: 2px solid #2f6d9f;
-	}
-
-	.globe-error {
-		position: absolute;
-		left: 1rem;
-		top: 1rem;
-		padding: 0.5rem 0.7rem;
-		border: 1px solid #6a2f2f;
-		background: #1a1010;
-		color: #ffb5b5;
-		font-size: 0.78rem;
-		border-radius: 0.5rem;
-		z-index: 650;
-	}
-
-	@media (max-width: 1040px) {
-		.globe-popup {
-			width: min(21rem, 54vw);
-		}
-	}
-
-	@media (max-width: 680px) {
-		.globe-popup {
-			width: min(86vw, 20rem);
-			max-height: min(60vh, 19rem);
-		}
 	}
 
 	:global(.cesium-viewer-toolbar),
