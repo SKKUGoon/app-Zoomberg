@@ -8,6 +8,8 @@
 		value: number;
 	};
 
+	type PanelMode = 'full' | 'summary' | 'minimized';
+
 	let {
 		loading,
 		lastPolledAt,
@@ -36,7 +38,9 @@
 		selectedNewsId,
 		formatLocationsForCard,
 		summarizeRelationship,
-		onToggleNewsSelection
+		onToggleNewsSelection,
+		mode,
+		onModeChange
 	} = $props<{
 		loading: boolean;
 		lastPolledAt: string;
@@ -66,31 +70,57 @@
 		formatLocationsForCard: (cities: NewsCity[]) => string;
 		summarizeRelationship: (item: NewsCard) => string | null;
 		onToggleNewsSelection: (newsId: number) => void;
+		mode: PanelMode;
+		onModeChange: (nextMode: PanelMode) => void;
 	}>();
 
-	let collapsed = $state(false);
+	const setMode = (nextMode: PanelMode) => {
+		if (mode !== nextMode) {
+			onModeChange(nextMode);
+		}
+	};
 </script>
 
-<section class="news-overlay" class:collapsed>
+<section class="news-overlay" class:summary={mode === 'summary'} class:minimized={mode === 'minimized'}>
 	<div class="panel-heading-row">
 		<div class="panel-heading">
 			<div class="heading-title-row">
-				<button
-					type="button"
-					class="panel-collapse-toggle"
-					aria-expanded={!collapsed}
-					aria-label={collapsed ? 'Expand live news feed panel' : 'Collapse live news feed panel'}
-					onclick={() => {
-						collapsed = !collapsed;
-					}}
-				>
-					{collapsed ? '▸' : '▾'}
-				</button>
+				<div class="panel-mode-controls" role="toolbar" aria-label="Live news feed panel mode">
+					<button
+						type="button"
+						class="mode-dot mode-minimized"
+						class:active={mode === 'minimized'}
+						aria-label="Minimize live news feed panel"
+						onclick={() => setMode('minimized')}
+					>
+						<span aria-hidden="true">-</span>
+					</button>
+					<button
+						type="button"
+						class="mode-dot mode-summary"
+						class:active={mode === 'summary'}
+						aria-label="Show summary live news feed panel"
+						onclick={() => setMode('summary')}
+					>
+						<span aria-hidden="true">~</span>
+					</button>
+					<button
+						type="button"
+						class="mode-dot mode-full"
+						class:active={mode === 'full'}
+						aria-label="Open full live news feed panel"
+						onclick={() => setMode('full')}
+					>
+						<span aria-hidden="true">+</span>
+					</button>
+				</div>
 				<h2>Live News Feed</h2>
 			</div>
-			<p>{loading ? 'Polling...' : `Last polled: ${lastPolledAt ? formatTime(lastPolledAt) : 'n/a'}`}</p>
+			{#if mode !== 'minimized'}
+				<p>{loading ? 'Polling...' : `Last polled: ${lastPolledAt ? formatTime(lastPolledAt) : 'n/a'}`}</p>
+			{/if}
 		</div>
-		{#if !collapsed}
+		{#if mode === 'full'}
 			<div class="feed-pagination">
 				<button type="button" onclick={onPrevPage} disabled={feedPage <= 1} aria-label="Previous feed page">Prev</button>
 				<span>{feedPage}/{totalFeedPages}</span>
@@ -99,7 +129,9 @@
 		{/if}
 	</div>
 
-	{#if collapsed}
+	{#if mode === 'minimized'}
+		<div class="minimized-strip" aria-label="Live News Feed minimized">Live News Feed panel</div>
+	{:else if mode === 'summary'}
 		{#if latestFeedItem}
 			<div class="cards collapsed-cards">
 				<NewsFeedCard
@@ -181,13 +213,14 @@
 		pointer-events: auto;
 		width: 100%;
 		max-width: 30rem;
+		flex: 1 1 auto;
 		display: flex;
 		flex-direction: column;
 		justify-content: flex-start;
 		align-items: stretch;
 		padding: 0.8rem;
 		min-height: 0;
-		height: 100%;
+		height: auto;
 		min-width: 0;
 		max-height: none;
 		overflow: hidden;
@@ -200,11 +233,20 @@
 		transition: box-shadow 140ms ease;
 	}
 
-	.news-overlay.collapsed {
+	.news-overlay.summary {
+		flex: 0 0 auto;
+		height: auto;
+		max-height: min(22rem, 58vh);
+	}
+
+	.news-overlay.minimized {
+		flex: 0 0 auto;
 		margin-top: auto;
 		align-self: flex-end;
 		height: auto;
-		max-height: min(22rem, 58vh);
+		width: 100%;
+		max-width: 30rem;
+		padding: 0.55rem 0.7rem;
 	}
 
 	.panel-heading-row {
@@ -225,22 +267,49 @@
 	.heading-title-row {
 		display: flex;
 		align-items: center;
-		gap: 0.35rem;
+		gap: 0.42rem;
 	}
 
-	.panel-collapse-toggle {
-		width: 1rem;
-		height: 1rem;
+	.panel-mode-controls {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.34rem;
+	}
+
+	.mode-dot {
+		width: 0.92rem;
+		height: 0.92rem;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		border: 1px solid #3a4b5f;
-		border-radius: 0.24rem;
-		background: #101923;
-		color: #c7d5e4;
-		font: 700 0.58rem/1 'IBM Plex Mono', monospace;
-		cursor: pointer;
+		border-radius: 999px;
+		border: 1px solid #00000066;
 		padding: 0;
+		cursor: pointer;
+		color: #000000c7;
+		font: 700 0.58rem/1 'IBM Plex Mono', monospace;
+		opacity: 0.7;
+	}
+
+	.mode-dot span {
+		line-height: 1;
+	}
+
+	.mode-dot.active {
+		opacity: 1;
+		box-shadow: 0 0 0 1px #dce7f47a;
+	}
+
+	.mode-minimized {
+		background: #ff5f57;
+	}
+
+	.mode-summary {
+		background: #febc2e;
+	}
+
+	.mode-full {
+		background: #28c840;
 	}
 
 	.panel-heading p {
@@ -269,6 +338,13 @@
 	.feed-pagination button:disabled {
 		opacity: 0.45;
 		cursor: default;
+	}
+
+	.minimized-strip {
+		margin-top: 0.12rem;
+		font: 600 0.74rem/1.15 'IBM Plex Mono', monospace;
+		color: #d8e8fb;
+		white-space: nowrap;
 	}
 
 	.controls-row {

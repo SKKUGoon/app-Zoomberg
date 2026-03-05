@@ -61,6 +61,8 @@ export type GlobeRelationshipOverlay = {
 		toLatitude: number;
 		toLongitude: number;
 		color: string;
+		relationType: 'Assault' | 'Cooperate' | 'Independent';
+		relationNote: string | null;
 	}>;
 };
 

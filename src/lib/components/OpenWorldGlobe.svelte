@@ -58,6 +58,10 @@
 	let loadError = $state('');
 	let popupPlacement = $state<'left' | 'right'>('right');
 	let popupStyle = $state('opacity: 0; pointer-events: none;');
+	let hoverShowTimer: number | null = null;
+	let hoverHideTimer: number | null = null;
+	const HOVER_SHOW_DELAY_MS = 180;
+	const HOVER_HIDE_DELAY_MS = 120;
 	const MIN_ZOOM = 2.6;
 	const MAX_ZOOM = 6;
 	const ZOOM_HEIGHT_SCALE = 70_000_000;
@@ -185,6 +189,66 @@
 		relationshipEntities.clear();
 	};
 
+	const clearHoverTimers = () => {
+		if (hoverShowTimer !== null) {
+			window.clearTimeout(hoverShowTimer);
+			hoverShowTimer = null;
+		}
+		if (hoverHideTimer !== null) {
+			window.clearTimeout(hoverHideTimer);
+			hoverHideTimer = null;
+		}
+	};
+
+	const scheduleHoveredMarker = (nextHoveredId: string | null) => {
+		if (!viewer) {
+			return;
+		}
+
+		if (nextHoveredId) {
+			if (hoverHideTimer !== null) {
+				window.clearTimeout(hoverHideTimer);
+				hoverHideTimer = null;
+			}
+
+			if (hoveredMarkerId === nextHoveredId) {
+				if (hoverShowTimer !== null) {
+					window.clearTimeout(hoverShowTimer);
+					hoverShowTimer = null;
+				}
+				return;
+			}
+
+			if (hoverShowTimer !== null) {
+				window.clearTimeout(hoverShowTimer);
+			}
+			hoverShowTimer = window.setTimeout(() => {
+				hoveredMarkerId = nextHoveredId;
+				hoverShowTimer = null;
+				updatePopupAnchor();
+				viewer?.scene.requestRender();
+			}, HOVER_SHOW_DELAY_MS);
+			return;
+		}
+
+		if (hoverShowTimer !== null) {
+			window.clearTimeout(hoverShowTimer);
+			hoverShowTimer = null;
+		}
+		if (hoveredMarkerId === null) {
+			return;
+		}
+		if (hoverHideTimer !== null) {
+			window.clearTimeout(hoverHideTimer);
+		}
+		hoverHideTimer = window.setTimeout(() => {
+			hoveredMarkerId = null;
+			hoverHideTimer = null;
+			updatePopupAnchor();
+			viewer?.scene.requestRender();
+		}, HOVER_HIDE_DELAY_MS);
+	};
+
 
 	const renderRelationshipOverlay = () => {
 		if (!viewer || !cesium) {
@@ -211,24 +275,57 @@
 		}
 
 		for (const link of newsRelationshipOverlay.links) {
+			const midLongitude = (link.fromLongitude + link.toLongitude) / 2;
+			const midLatitude = (link.fromLatitude + link.toLatitude) / 2;
+			const noteLabel = link.relationNote ? link.relationNote : `${link.relationType}`;
+			const linePositions = cesium.Cartesian3.fromDegreesArray([
+				link.fromLongitude,
+				link.fromLatitude,
+				link.toLongitude,
+				link.toLatitude
+			]);
+			const lineColor = cesium.Color.fromCssColorString(link.color);
+
+			const glowArc = viewer.entities.add({
+				polyline: {
+					positions: linePositions,
+					width: 10,
+					arcType: cesium.ArcType.GEODESIC,
+					material: lineColor.withAlpha(0.3)
+				}
+			});
+			relationshipEntities.set(`link-glow:${link.fromCityId}:${link.toCityId}:${link.color}`, glowArc);
+
 			const arc = viewer.entities.add({
 				polyline: {
-					positions: cesium.Cartesian3.fromDegreesArray([
-						link.fromLongitude,
-						link.fromLatitude,
-						link.toLongitude,
-						link.toLatitude
-					]),
-					width: 3,
+					positions: linePositions,
+					width: 5,
 					arcType: cesium.ArcType.GEODESIC,
-					material: new cesium.PolylineGlowMaterialProperty({
-						glowPower: 0.22,
-						taperPower: 0.62,
-						color: cesium.Color.fromCssColorString(link.color).withAlpha(0.95)
-					})
+					material: lineColor.withAlpha(1)
 				}
 			});
 			relationshipEntities.set(`link:${link.fromCityId}:${link.toCityId}:${link.color}`, arc);
+
+			const label = viewer.entities.add({
+				position: cesium.Cartesian3.fromDegrees(midLongitude, midLatitude),
+				label: {
+					text: noteLabel,
+					font: '500 11px IBM Plex Sans',
+					fillColor: cesium.Color.fromCssColorString('#dce8f6'),
+					outlineColor: cesium.Color.fromCssColorString('#0a1018').withAlpha(0.95),
+					outlineWidth: 2,
+					style: cesium.LabelStyle.FILL_AND_OUTLINE,
+					showBackground: true,
+					backgroundColor: cesium.Color.fromCssColorString('#0a1119').withAlpha(0.72),
+					backgroundPadding: new cesium.Cartesian2(7, 4),
+					horizontalOrigin: cesium.HorizontalOrigin.CENTER,
+					verticalOrigin: cesium.VerticalOrigin.BOTTOM,
+					disableDepthTestDistance: Number.POSITIVE_INFINITY,
+					heightReference: cesium.HeightReference.NONE,
+					pixelOffset: new cesium.Cartesian2(0, -4)
+				}
+			});
+			relationshipEntities.set(`link-label:${link.fromCityId}:${link.toCityId}:${link.color}`, label);
 		}
 
 		viewer.scene.requestRender();
@@ -682,11 +779,7 @@
 					const picked = viewer.scene.pick(movement.endPosition);
 					const markerId = picked?.id?.properties?.markerId?.getValue?.();
 					const nextHoveredId = typeof markerId === 'string' ? markerId : null;
-					if (hoveredMarkerId !== nextHoveredId) {
-						hoveredMarkerId = nextHoveredId;
-						updatePopupAnchor();
-						viewer.scene.requestRender();
-					}
+					scheduleHoveredMarker(nextHoveredId);
 				}, c.ScreenSpaceEventType.MOUSE_MOVE);
 
 				renderMarkers();
@@ -699,6 +792,7 @@
 
 		return () => {
 			alive = false;
+			clearHoverTimers();
 			if (clickHandler) {
 				clickHandler.destroy();
 			}

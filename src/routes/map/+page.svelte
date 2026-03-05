@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import OpenWorldGlobe from '$lib/components/OpenWorldGlobe.svelte';
 	import FeedOverlayPanel from '$lib/components/map/FeedOverlayPanel.svelte';
+	import EmptyFeedLikePanel from '$lib/components/map/EmptyFeedLikePanel.svelte';
 	import MapLegend from '$lib/components/map/MapLegend.svelte';
 	import MapTicker from '$lib/components/map/MapTicker.svelte';
 	import { buildMapMarkers, formatLocation, getNumericCoords } from '$lib/domain/markerBuilder';
@@ -24,6 +25,18 @@
 	} from '$lib/domain/themeTaxonomy';
 	import type { GlobeFocusTarget, GlobeRelationshipOverlay, MapMarker, NewsCard, NewsCity } from '$lib/types/news';
 
+	type RelationshipLink = {
+		fromCityId: string;
+		toCityId: string;
+		fromLatitude: number;
+		fromLongitude: number;
+		toLatitude: number;
+		toLongitude: number;
+		color: string;
+		relationType: 'Assault' | 'Cooperate' | 'Independent';
+		relationNote: string | null;
+	};
+
 	const MAX_WINDOW_MS = 48 * 60 * 60 * 1000;
 	const newsFeedState = new NewsFeedState({
 		maxWindowMs: MAX_WINDOW_MS,
@@ -36,6 +49,44 @@
 		{ label: '5 minutes', value: 300_000 },
 		{ label: '10 minutes', value: 600_000 }
 	] as const;
+
+	type PanelMode = 'full' | 'summary' | 'minimized';
+	let liveNewsPanelMode = $state<PanelMode>('summary');
+	let polymarketPanelMode = $state<PanelMode>('summary');
+	let twitterPanelMode = $state<PanelMode>('summary');
+	const allPanelsSummary = $derived.by(
+		() =>
+			liveNewsPanelMode === 'summary' &&
+			polymarketPanelMode === 'summary' &&
+			twitterPanelMode === 'summary'
+	);
+	const hasFullPanel = $derived.by(
+		() => liveNewsPanelMode === 'full' || polymarketPanelMode === 'full' || twitterPanelMode === 'full'
+	);
+
+	const setLiveNewsPanelMode = (nextMode: PanelMode) => {
+		liveNewsPanelMode = nextMode;
+		if (nextMode === 'full') {
+			polymarketPanelMode = 'minimized';
+			twitterPanelMode = 'minimized';
+		}
+	};
+
+	const setPolymarketPanelMode = (nextMode: PanelMode) => {
+		polymarketPanelMode = nextMode;
+		if (nextMode === 'full') {
+			liveNewsPanelMode = 'minimized';
+			twitterPanelMode = 'minimized';
+		}
+	};
+
+	const setTwitterPanelMode = (nextMode: PanelMode) => {
+		twitterPanelMode = nextMode;
+		if (nextMode === 'full') {
+			liveNewsPanelMode = 'minimized';
+			polymarketPanelMode = 'minimized';
+		}
+	};
 
 	const onPollingChange = (event: Event) => {
 		newsFeedState.setPollingMsFromEvent(event);
@@ -189,7 +240,7 @@
 		}
 
 		const highlights = new Map<string, GlobeRelationshipOverlay['highlights'][number]>();
-		const links = new Map<string, GlobeRelationshipOverlay['links'][number]>();
+		const links = new Map<string, RelationshipLink>();
 
 		const addHighlight = (cityId: string, color: string) => {
 			const coords = cityCoordMap.get(cityId);
@@ -210,14 +261,21 @@
 			if (!from || !to) {
 				return;
 			}
-			links.set(`${fromCityId}:${toCityId}:${color}`, {
+			const key = `${fromCityId}:${toCityId}:${color}`;
+			const existing = links.get(key);
+			if (existing) {
+				return;
+			}
+			links.set(key, {
 				fromCityId,
 				toCityId,
 				fromLatitude: from.latitude,
 				fromLongitude: from.longitude,
 				toLatitude: to.latitude,
 				toLongitude: to.longitude,
-				color
+				color,
+				relationType: 'Independent',
+				relationNote: null
 			});
 		};
 
@@ -241,7 +299,23 @@
 			const color = relation.relation_type === 'Cooperate' ? GREEN : RED;
 			addHighlight(relation.from_city_id, color);
 			addHighlight(relation.to_city_id, color);
+			const key = `${relation.from_city_id}:${relation.to_city_id}:${color}`;
+			const existing = links.get(key);
+			const note = relation.relation_note?.trim() ? relation.relation_note.trim() : null;
+			if (existing) {
+				if (!existing.relationNote && note) {
+					existing.relationNote = note;
+				} else if (existing.relationNote && note && existing.relationNote !== note && !existing.relationNote.endsWith(' (more)')) {
+					existing.relationNote = `${existing.relationNote} (more)`;
+				}
+				continue;
+			}
 			addLink(relation.from_city_id, relation.to_city_id, color);
+			const created = links.get(key);
+			if (created) {
+				created.relationType = relation.relation_type;
+				created.relationNote = note;
+			}
 		}
 
 		return {
@@ -265,7 +339,7 @@
 		}
 
 		const highlights = new Map<string, GlobeRelationshipOverlay['highlights'][number]>();
-		const links = new Map<string, GlobeRelationshipOverlay['links'][number]>();
+		const links = new Map<string, RelationshipLink>();
 		const cityCoordMap = new Map<string, { latitude: number; longitude: number }>();
 
 		const addHighlight = (cityId: string, color: string) => {
@@ -281,22 +355,46 @@
 			});
 		};
 
-		const addLink = (fromCityId: string, toCityId: string, color: string) => {
+		const addLink = (
+			fromCityId: string,
+			toCityId: string,
+			color: string,
+			relationType: RelationshipLink['relationType'],
+			relationNote: string | null
+		) => {
 			const from = cityCoordMap.get(fromCityId);
 			const to = cityCoordMap.get(toCityId);
 			if (!from || !to) {
 				return;
 			}
-			links.set(`${fromCityId}:${toCityId}:${color}`, {
+			const key = `${fromCityId}:${toCityId}:${color}`;
+			const existing = links.get(key);
+			const note = relationNote?.trim() ? relationNote.trim() : null;
+			if (existing) {
+				if (!existing.relationNote && note) {
+					existing.relationNote = note;
+				} else if (existing.relationNote && note && existing.relationNote !== note && !existing.relationNote.endsWith(' (more)')) {
+					existing.relationNote = `${existing.relationNote} (more)`;
+				}
+				return;
+			}
+			links.set(key, {
 				fromCityId,
 				toCityId,
 				fromLatitude: from.latitude,
 				fromLongitude: from.longitude,
 				toLatitude: to.latitude,
 				toLongitude: to.longitude,
-				color
+				color,
+				relationType,
+				relationNote: note
 			});
 		};
+
+		cityCoordMap.set(selectedMarker.cityId, {
+			latitude: selectedMarker.latitude,
+			longitude: selectedMarker.longitude
+		});
 
 		for (const item of markerItems) {
 			for (const city of item.cities) {
@@ -312,33 +410,31 @@
 			return null;
 		}
 
-		for (const item of markerItems) {
-			if (item.relationships.length === 0) {
-				for (const city of item.cities) {
-					if (cityCoordMap.has(city.city_id)) {
-						addHighlight(city.city_id, BLUE);
-					}
-				}
-				continue;
-			}
+		addHighlight(selectedMarker.cityId, BLUE);
 
+		for (const item of markerItems) {
 			for (const relation of item.relationships) {
+				if (relation.from_city_id !== selectedMarker.cityId) {
+					continue;
+				}
+				if (!cityCoordMap.has(relation.to_city_id)) {
+					continue;
+				}
+
 				if (relation.relation_type === 'Independent') {
-					addHighlight(relation.from_city_id, BLUE);
 					addHighlight(relation.to_city_id, BLUE);
 					continue;
 				}
 
 				const color = relation.relation_type === 'Cooperate' ? GREEN : RED;
-				addHighlight(relation.from_city_id, color);
 				addHighlight(relation.to_city_id, color);
-				addLink(relation.from_city_id, relation.to_city_id, color);
-			}
-		}
-
-		if (highlights.size === 0) {
-			for (const cityId of cityCoordMap.keys()) {
-				addHighlight(cityId, BLUE);
+				addLink(
+					relation.from_city_id,
+					relation.to_city_id,
+					color,
+					relation.relation_type,
+					relation.relation_note
+				);
 			}
 		}
 
@@ -439,7 +535,7 @@
 		onMarkerClose={onMarkerClose}
 	/>
 	<div class="top-row">
-		<div class="map-context-badge" aria-label="Current map context">{mapContextLabel}</div>
+		<MapLegend items={markerThemeLegend} {mapContextLabel} />
 		<div class="upper-bar">
 			<MapTicker items={topBannerItems} position="top" ariaLabel="Live news ticker" inline={true} />
 		</div>
@@ -449,8 +545,11 @@
 	</div>
 
 	<div class="overlay-grid">
-		<div class="sidebar-stack">
-			<FeedOverlayPanel
+		<div class="sidebar-stack" class:all-summary={allPanelsSummary} class:has-full={hasFullPanel}>
+			<div class="panel-slot" class:slot-full={liveNewsPanelMode === 'full'} class:slot-summary={liveNewsPanelMode === 'summary'}>
+				<FeedOverlayPanel
+				mode={liveNewsPanelMode}
+				onModeChange={setLiveNewsPanelMode}
 				loading={newsFeedState.loading}
 				lastPolledAt={newsFeedState.lastPolledAt}
 				{formatTime}
@@ -479,11 +578,24 @@
 				{formatLocationsForCard}
 				{summarizeRelationship}
 				onToggleNewsSelection={toggleNewsSelection}
-			/>
-
+				/>
+			</div>
+			<div class="panel-slot" class:slot-full={polymarketPanelMode === 'full'} class:slot-summary={polymarketPanelMode === 'summary'}>
+				<EmptyFeedLikePanel
+					title="Polymarket"
+					mode={polymarketPanelMode}
+					onModeChange={setPolymarketPanelMode}
+				/>
+			</div>
+			<div class="panel-slot" class:slot-full={twitterPanelMode === 'full'} class:slot-summary={twitterPanelMode === 'summary'}>
+				<EmptyFeedLikePanel
+					title="X"
+					mode={twitterPanelMode}
+					onModeChange={setTwitterPanelMode}
+				/>
+			</div>
 		</div>
 	</div>
-	<MapLegend items={markerThemeLegend} />
 </section>
 
 <style>
@@ -518,7 +630,7 @@
 		left: 1rem;
 		right: 1rem;
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		gap: 0.6rem;
 		z-index: 515;
 	}
@@ -528,25 +640,11 @@
 		min-width: 0;
 	}
 
-	.map-context-badge {
-		flex: 0 0 auto;
-		height: 2rem;
-		display: inline-flex;
-		align-items: center;
-		padding: 0 0.68rem;
-		border-radius: 999px;
-		border: 1px solid #8f6421;
-		background: linear-gradient(160deg, #3e2a11e8, #6f4a18d9);
-		color: #ffe4bb;
-		font: 600 0.7rem/1 'IBM Plex Mono', monospace;
-		white-space: nowrap;
-		box-shadow: 0 8px 18px #2a170766;
-	}
-
 	.sidebar-stack {
 		pointer-events: none;
 		display: flex;
 		flex-direction: column;
+		align-items: flex-end;
 		gap: 0.9rem;
 		width: min(30rem, 35vw);
 		min-width: min(30rem, 35vw);
@@ -561,6 +659,31 @@
 				(var(--globe-banner-offset) + var(--globe-banner-safe-bottom) + var(--overlay-bottom-gap))
 		);
 		overflow: hidden;
+	}
+
+	.panel-slot {
+		width: 100%;
+		display: flex;
+		min-height: 0;
+		pointer-events: none;
+	}
+
+	.sidebar-stack.all-summary .panel-slot {
+		flex: 1 1 0;
+	}
+
+	.sidebar-stack.all-summary .panel-slot :global(.news-overlay.summary),
+	.sidebar-stack.all-summary .panel-slot :global(.panel.summary) {
+		height: 100%;
+		max-height: none;
+	}
+
+	.sidebar-stack.has-full .panel-slot.slot-full {
+		flex: 1 1 0;
+	}
+
+	.sidebar-stack.has-full .panel-slot.slot-summary {
+		flex: 0 0 auto;
 	}
 
 	@media (max-width: 1040px) {
